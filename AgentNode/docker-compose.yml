@@ -1,0 +1,33 @@
+version: '3.9'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: langgraph-agent
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Mount source code for development (hot-reload compatible if using a watcher, but good for quick edits)
+      - .:/app
+    ports:
+      - "8025:8025"
+    # simple healthcheck to ensure container is running
+    # Since this is a CLI script and not a server, a healthcheck might technically fail if the script exits.
+    # However, if this were a long-running service, this is how you'd do it.
+    # For a one-off script, you might remove this or adjust the CMD to keep it alive.
+    # healthcheck:
+    #   test: [ "CMD", "curl", "-f", "http://localhost:8025/health" ]
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    stop_grace_period: 10s
+    restart: unless-stopped
