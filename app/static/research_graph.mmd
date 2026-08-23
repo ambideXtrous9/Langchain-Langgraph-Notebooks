@@ -1,0 +1,32 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	planner(planner)
+	approver(approver)
+	researcher_dispatcher(researcher_dispatcher)
+	researcher(researcher)
+	synthesizer(synthesizer)
+	fact_critic(fact_critic)
+	style_critic_1(style_critic_1)
+	style_critic_2(style_critic_2)
+	publisher(publisher<hr/><small><em>defer = True</em></small>)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> planner;
+	approver -. &nbsp;revise&nbsp; .-> planner;
+	approver -. &nbsp;dispatch&nbsp; .-> researcher_dispatcher;
+	fact_critic --> publisher;
+	planner --> approver;
+	researcher --> synthesizer;
+	researcher_dispatcher --> researcher;
+	style_critic_1 --> style_critic_2;
+	style_critic_2 --> publisher;
+	synthesizer --> fact_critic;
+	synthesizer --> style_critic_1;
+	publisher --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # PostgreSQL Database (Checkpointer & Chat History)
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: langgraph_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: agent_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agent_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent_network
+
+  # ----------------------------------------------------------------------------
+  # FastAPI LangGraph Application
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: langgraph_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=True
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DATABASE_URL=postgresql://postgres:postgrespassword@postgres:5432/agent_db
+      - DB_URI=postgresql://postgres:postgrespassword@postgres:5432/agent_db
+      - AUTH_DATABASE_URL=postgresql://postgres:postgrespassword@postgres:5432/auth_db
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-enterprise-langgraph-secret-key-32-chars-minimum-prod}
+      - TABLE_NAME=chat_message_history
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-openai/gpt-oss-120b}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - LANGFUSE_ENABLED=${LANGFUSE_ENABLED:-True}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://us.cloud.langfuse.com}
+    volumes:
+      - ./app:/app/app
+      - ./app/static:/app/app/static
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - agent_network
+
+networks:
+  agent_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

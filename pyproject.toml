@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "langgraph-enterprise-agent"
+version = "1.0.0"
+description = "Enterprise-grade production LangGraph architecture with FastAPI, Postgres Checkpointing, Hybrid Reranking, Observability, and Streaming"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "DeepMind Agentic Engineering" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "ddgs>=9.15.0",
+    "email-validator>=2.3.0",
+    "pwdlib[argon2]>=0.3.1",
+    "pyjwt>=2.13.0",
+    "python-multipart>=0.0.32",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --asyncio-mode=auto"
+testpaths = [
+    "tests",
+]
+python_files = [
+    "test_*.py",
+    "*_test.py",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]

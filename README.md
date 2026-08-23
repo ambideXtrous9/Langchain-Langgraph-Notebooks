@@ -1,0 +1,390 @@
+# 🚀 Enterprise LangGraph Production Architecture Template
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2.28+-orange.svg)](https://langchain-ai.github.io/langgraph/)
+[![Langfuse](https://img.shields.io/badge/Observability-Langfuse-purple.svg)](https://langfuse.com/)
+[![Docker](https://img.shields.io/badge/Docker-Multi--Stage-2496ED.svg)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A reference implementation and production-grade boilerplate for building robust, observable, and stateful AI agent applications with **LangGraph**, **FastAPI**, **PostgreSQL Checkpointing**, **Langfuse Tracing**, **Hybrid BM25 + Cross-Encoder Reranking**, **Server-Sent Events (SSE)**, and **WebSocket Streaming**.
+
+---
+
+## 📑 Table of Contents
+
+- [Architectural Overview](#-architectural-overview)
+- [Core Mechanisms & Design Patterns](#-core-mechanisms--design-patterns)
+- [Project Directory Structure](#-project-directory-structure)
+- [API Endpoints Specification](#-api-endpoints-specification)
+- [Environment Configuration](#-environment-configuration)
+- [Quickstart & Running Locally](#-quickstart--running-locally)
+- [Docker & Docker Compose](#-docker--docker-compose)
+- [Streaming & Interrupt Client Usage](#-streaming--interrupt-client-usage)
+- [Adapting for Future Projects](#-adapting-for-future-projects)
+
+---
+
+## 🏛️ Architectural Overview
+
+### 1. System Gateway & Multi-DB Architecture (Authentication & Authorization)
+
+The system is decoupled into **Public Authentication** and **Protected Agent Services** backed by dual isolated databases in PostgreSQL:
+
+```
+                                  ┌─────────────────────────────────────────────────────────┐
+                                  │                     FASTAPI GATEWAY                     │
+                                  └────────────────────────────┬────────────────────────────┘
+                                                               │
+                                       ┌───────────────────────┴───────────────────────┐
+                                       │                                               │
+                           [Public Auth Endpoints]                         [Protected Agent Endpoints]
+                                       │                                               │
+                     ┌─────────────────┴─────────────────┐                             │  Depends(get_current_user)
+                     │  POST /auth/signup                │                             ▼
+                     │  POST /auth/login                 │                 ┌───────────────────────┐
+                     │  POST /auth/forgot-password       │                 │ POST /research/run    │
+                     │  POST /auth/reset-password        │                 │ POST /research/stream │
+                     │  POST /auth/logout                │                 │ POST /interact        │
+                     └─────────────────┬─────────────────┘                 │ POST /generic_chat    │
+                                       │                                   │ POST /get_sql_query   │
+                                       │                                   └───────────┬───────────┘
+                                       ▼                                               │
+                     ┌───────────────────────────────────┐                             │ (user_id isolation)
+                     │       POSTGRES: auth_db           │                             ▼
+                     │  - users                          │                 ┌───────────────────────┐
+                     │  - token_blacklist                │                 │  POSTGRES: agent_db   │
+                     │  - password_reset_tokens          │                 │  - checkpoints        │
+                     └───────────────────────────────────┘                 │  - chat_history       │
+                                                                           └───────────────────────┘
+```
+
+---
+
+### 2. Workflow Graphs
+
+#### A. Regulatory Decision-Tree Graph (Stateful Human-in-the-Loop)
+```mermaid
+flowchart TD
+    Start([User Request]) --> UserInitPath[1. user_initpath\nExtract User Decision & Path]
+    UserInitPath --> ClassifyNode[2. classify_node\nStructured Pydantic Classifier with Retries]
+    
+    ClassifyNode -- "exit" --> EndNode([END])
+    ClassifyNode -- "generic" --> FeedbackLoop[6. process_feedback\nHuman-in-the-Loop Interrupt]
+    ClassifyNode -- "fda / useDeviceData=True" --> DeviceSummary[3. device_summary\nExtract & Summarize Device Specs]
+    ClassifyNode -- "fda / useDeviceData=False" --> KnowledgeBase[4. knowledge_base\nHybrid BM25 + Dense Retrieval]
+    
+    DeviceSummary --> KnowledgeBase
+    KnowledgeBase --> ReasonLLM[5. reason_llm\nDomain Regulatory Reasoning & SSE Tag]
+    ReasonLLM --> FeedbackLoop
+    FeedbackLoop --> ClassifyNode
+```
+
+#### B. Parallel Multi-Critic Research Graph (`defer = True` Join)
+```mermaid
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	planner(planner)
+	approver(approver<br/><small><em>autonomous review</em></small>)
+	researcher_dispatcher(researcher_dispatcher)
+	researcher(researcher<br/><small><em>DuckDuckGo live search</em></small>)
+	synthesizer(synthesizer)
+	fact_critic(fact_critic<br/><small><em>Branch A: Fact Audit</em></small>)
+	style_critic_1(style_critic_1<br/><small><em>Branch B1: Tone & Clarity</em></small>)
+	style_critic_2(style_critic_2<br/><small><em>Branch B2: Executive Polish</em></small>)
+	publisher(publisher<hr/><small><em>defer = True</em></small>)
+	__end__([<p>__end__</p>]):::last
+	
+	__start__ --> planner;
+	planner --> approver;
+	approver -. &nbsp;revise&nbsp; .-> planner;
+	approver -. &nbsp;dispatch&nbsp; .-> researcher_dispatcher;
+	researcher_dispatcher --> researcher;
+	researcher --> synthesizer;
+	
+	%% Parallel Fan-Out
+	synthesizer --> fact_critic;
+	synthesizer --> style_critic_1;
+	style_critic_1 --> style_critic_2;
+	
+	%% Fan-In with defer=True
+	fact_critic --> publisher;
+	style_critic_2 --> publisher;
+	publisher --> __end__;
+	
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
+```
+
+---
+
+## ⚙️ Core Mechanisms & Design Patterns
+
+### 1. LangGraph StateGraph & Class-Based Nodes
+- **`AgentState` TypedDict**: Manages `tree`, `user_choices`, `current_path_str`, `user_decisions_str`, `context_docs_str`, `classification`, `feedback`, `useDeviceData`, `userProvidedDeiveceData`, and `chat_history` with the `add_messages` reducer.
+- **Modular OOP Nodes**: Each node inherits from [BaseGraphNode](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/graphs/nodes/base.py) providing standardized execution boundaries, error handling, and tracing.
+
+### 2. PostgreSQL Checkpointing (`AsyncPostgresSaver`)
+- Persistent thread checkpoints stored asynchronously in PostgreSQL with `AsyncPostgresSaver(pool)`.
+- Seamless development fallback to `MemorySaver` when PostgreSQL is offline.
+- Dedicated `/delete_thread` endpoint for checkpoint eviction and GDPR compliance.
+
+### 3. Server-Sent Events (SSE) & WebSocket Streaming
+- **SSE Endpoint (`/interact`)**: Streams the generated `thread_id` first, then yields real-time token chunks using `graph.astream_events(..., version="v2")` filtered on `on_chat_model_stream` and `tags=["RegulatoryExpert"]`.
+- **WebSocket Endpoint (`/ws/interact`)**: Full-duplex bidirectional streaming supporting initial conversations and instant interrupt resume commands.
+
+### 4. Human-in-the-Loop Interrupts & Resumes
+- The `process_feedback` node uses LangGraph's `interrupt()` primitive to safely suspend execution without blocking threads.
+- Graph resumes execution upon receiving user feedback via `Command(resume=..., update=...)`.
+
+### 5. Hybrid Search with Cross-Encoder Reranking (`EnhancedGDNCRetriever`)
+- Combines sparse keyword search (**BM25Okapi**) and dense semantic vector search with normalized weighting (`bm25_weight * bm25_norm + (1 - bm25_weight) * semantic_norm`).
+- **Cross-Encoder Model** (`cross-encoder/ms-marco-MiniLM-L-12-v2`) reranks candidates.
+- **Source-Aware Filtering**: Drops blank, index, table of contents, and reference pages while applying source-frequency weighting.
+- **Ensemble Retrieval**: Dynamic [make_ensemble](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/retrievers/ensemble.py) combines domain vector databases (CFR regulations, ISO standards, FDA guidance).
+
+### 6. SQL Agent with SQLDatabaseToolkit
+- Natural language to SQL generation and execution using `create_sql_agent` with toolkits, returning synthesized explanations, the exact SQL query, and raw tabular results.
+
+### 7. Structured Output Classifier with Self-Correction Retries
+- Enforces strict JSON schemas using `PydanticOutputParser(pydantic_object=Classify)` with an iterative retry loop on `ValidationError` that passes formatting correction feedback to the LLM.
+
+### 8. Observability with Langfuse
+- Non-blocking tracing and telemetry integration using `langfuse.callback.CallbackHandler` attached to LangGraph `RunnableConfig`.
+
+### 9. Agent Middleware Architecture (`app/middleware/`)
+Modular, extensible middleware system implementing lifecycle interception (`before_agent`, `before_model`, `after_model`, `before_tools`, `after_tools`, `after_agent`):
+- **`PIIMiddleware`**: Detects and sanitizes emails, phone numbers, SSNs, credit cards, medical record IDs (MRN/PHI), and IPv4 addresses via `mask`, `redact`, or `hash` strategies.
+- **`RateLimitMiddleware`**: Sliding-window rate limiter per user/session, consecutive error count tracking, circuit breaker protection, and reasoning confidence auditing.
+- **`HumanInTheLoopMiddleware`**: Intercepts sensitive tool calls (e.g. `execute_sql_mutation`, `submit_fda_filing`) and pauses execution until human authorization is granted.
+- **`SummarizationMiddleware`**: Token- and message-count-aware chat history compressor (`trigger=[("tokens", 1200), ("messages", 8)]`), summarizing older dialogue while preserving recent context.
+
+---
+
+## 📁 Project Directory Structure
+
+```
+langgraph-project/
+├── .env.example                # Example environment variables template
+├── .env                        # Active local environment variables
+├── .gitignore                  # Git ignore rules
+├── Dockerfile                  # Production multi-stage Docker build
+├── docker-compose.yml          # FastAPI + PostgreSQL orchestration
+├── pyproject.toml              # Build system & pytest configuration
+├── requirements.txt            # Python dependencies
+├── README.md                   # Comprehensive documentation
+├── AgentNotes.ipynb            # Original reference notebook
+├── app/
+│   ├── __init__.py
+│   ├── main.py                 # FastAPI app, lifespan, CORS, static mounts, and routers
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── config.py           # Pydantic BaseSettings (DB, LLM, CORS, Langfuse)
+│   │   ├── database.py         # AsyncConnectionPool & Postgres checkpointing manager
+│   │   ├── exceptions.py       # Custom application exceptions and error handlers
+│   │   └── observability.py    # Langfuse callback handlers and RunnableConfig builder
+│   ├── schemas/
+│   │   ├── __init__.py
+│   │   ├── state.py            # LangGraph AgentState TypedDict & Classify Pydantic model
+│   │   ├── chat.py             # ChatRequest, ChatResponse, DeleteSession
+│   │   ├── sql.py              # SQLQueryRequest, SQLQueryResponse
+│   │   └── interact.py         # InteractionRequest, DeleteThreadRequest, GraphStateResponse
+│   ├── agents/
+│   │   ├── __init__.py
+│   │   ├── react_agent.py      # ReAct agent with tools (Tavily/DDG) & context chat
+│   │   ├── sql_agent.py        # SQL agent with SQLDatabaseToolkit & query executor
+│   │   └── classifier_agent.py # Structured JSON classifier with self-correcting retry loop
+│   ├── graphs/
+│   │   ├── __init__.py
+│   │   ├── routing.py          # Conditional edge routing functions (decide_start_node)
+│   │   ├── builder.py          # GraphBuilder & StateGraph compilation factory
+│   │   └── nodes/
+│   │       ├── __init__.py
+│   │       ├── base.py         # BaseGraphNode abstract class
+│   │       ├── init_path.py    # user_initpath node
+│   │       ├── classify.py     # classify_node
+│   │       ├── device.py       # device_summary node
+│   │       ├── knowledge.py    # knowledge_base node
+│   │       ├── reason.py       # reason_llm node (tagged for SSE streaming)
+│   │       └── feedback.py     # process_feedback node (LangGraph interrupt)
+│   ├── retrievers/
+│   │   ├── __init__.py
+│   │   ├── hybrid_reranker.py  # EnhancedGDNCRetriever (BM25 + Semantic + CrossEncoder)
+│   │   └── ensemble.py         # EnsembleRetriever builder & mock vector stores
+│   └── api/
+│       ├── __init__.py
+│       └── v1/
+│           ├── __init__.py
+│           ├── router.py       # API v1 router aggregation
+│           └── endpoints/
+│               ├── __init__.py
+│               ├── health.py   # /health, /graph/mermaid
+│               ├── chat.py     # /generic_chat, /delete_session (PostgresChatMessageHistory)
+│               ├── sql.py      # /get_sql_query (SQL Agent)
+│               ├── interact.py # /interact (SSE streaming), /delete_thread, /thread state
+│               └── websocket.py# /ws/interact (Bidirectional streaming WebSocket)
+├── scripts/
+│   ├── init_db.py              # CLI database table verification script
+│   ├── test_client.py          # Python SSE client testing streaming & interrupt resume
+│   └── test_ws_client.py       # Python WebSocket streaming client
+└── tests/
+    ├── __init__.py
+    ├── test_api.py             # FastAPI endpoint integration tests
+    ├── test_classifier.py      # Structured classifier unit tests
+    ├── test_graph_builder.py   # StateGraph builder and routing unit tests
+    └── test_hybrid_retriever.py# BM25 + filtering + reranker unit tests
+```
+
+---
+
+## 📡 API Endpoints Specification
+
+### 1. Authentication & User Access (`auth_db`)
+| Method | Path | Description | Key Request Params / Auth |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/auth/signup` | Register a new user with Argon2 password hashing | `{"email": "...", "full_name": "...", "password": "..."}` |
+| `POST` | `/auth/login` | OAuth2 Password login & JWT access token generation | `username`, `password` (Form data) |
+| `GET` | `/auth/me` | Retrieve authenticated user profile | Bearer Token (`Authorization: Bearer <token>`) |
+| `POST` | `/auth/logout` | Revoke token and add to `token_blacklist` | Bearer Token (`Authorization: Bearer <token>`) |
+| `POST` | `/auth/forgot-password` | Generate cryptographic time-limited password reset token | `{"email": "..."}` |
+| `POST` | `/auth/reset-password` | Verify reset token and update hashed password | `{"token": "...", "new_password": "..."}` |
+
+### 2. Autonomous Research Pipeline (Parallel Multi-Critic + `defer=True`)
+| Method | Path | Description | Key Request Params |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/research/run` | Synchronous parallel research with DuckDuckGo search | `{"topic": "..."}` |
+| `POST` | `/research/stream` | **SSE token & dynamic hint streaming** from Publisher | `{"topic": "..."}` |
+| `GET` | `/research/mermaid` | Live Mermaid diagram of compiled parallel graph | None |
+
+### 3. Stateful Regulatory Decision-Tree (`agent_db`)
+| Method | Path | Description | Key Request Params |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/health` | Application health and database connection status | None |
+| `GET` | `/graph/mermaid` | Mermaid flowchart definition of compiled LangGraph | None |
+| `POST` | `/generic_chat` | Context-aware chat with `PostgresChatMessageHistory` | `{"user_input": "...", "session_id": "..."}` |
+| `DELETE` | `/delete_session` | Delete chat messages for a session from PostgreSQL | `{"session_id": "..."}` |
+| `POST` | `/get_sql_query` | Natural language Text-to-SQL agent query | `{"query": "Show devices approved in 2023"}` |
+| `POST` | `/interact` | **SSE streaming** graph execution with Human-in-the-Loop | `{"user_choices": {...}, "user_input": "..."}` |
+| `GET` | `/thread/{thread_id}/state` | Live checkpoint inspection for active thread | `thread_id` (path param) |
+| `DELETE` | `/delete_thread` | Delete graph checkpoint from `AsyncPostgresSaver` | `{"thread_id": "..."}` |
+| `WS` | `/ws/interact` | **WebSocket** bidirectional streaming & interrupts | JSON message payloads |
+
+---
+
+## 🔧 Environment Configuration
+
+Create a `.env` file based on `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `GROQ_API_KEY` | Groq API Key for high-speed LLM inference | `gsk_...` |
+| `DEFAULT_MODEL` | Groq model identifier (e.g. `openai/gpt-oss-120b`, `qwen/qwen3.6-27b`, `llama-3.3-70b-versatile`) | `openai/gpt-oss-120b` |
+| `DATABASE_URL` / `DB_URI` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/agent_db` |
+| `TABLE_NAME` | PostgreSQL table name for chat messages | `chat_message_history` |
+| `TAVILY_API_KEY` | Tavily Web Search API key | `""` |
+| `LANGFUSE_ENABLED` | Enable Langfuse tracing | `False` |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse Public Key | `""` |
+| `LANGFUSE_SECRET_KEY` | Langfuse Secret Key | `""` |
+| `LANGFUSE_HOST` | Langfuse Host URL | `https://cloud.langfuse.com` |
+| `CORS_ORIGINS` | Allowed CORS origins (JSON array or comma-separated) | `["*"]` |
+
+---
+
+## 🏃 Quickstart & Running Locally (with `uv`)
+
+### 1. Create Virtual Environment and Install Dependencies using `uv`
+```bash
+# Create Python 3.12 virtualenv with uv
+uv venv --python 3.12 .venv
+
+# Activate environment
+source .venv/bin/activate
+
+# Ultra-fast dependency installation with uv
+uv pip install -r requirements.txt
+```
+
+### 2. Run Test Suite
+```bash
+# Run pytest with uv
+uv run pytest
+```
+
+### 3. Start the FastAPI Server
+```bash
+# Run FastAPI server with hot-reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+- Swagger UI Interactive Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- ReDoc API Documentation: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- Compiled Graph Mermaid View: [http://localhost:8000/graph/mermaid](http://localhost:8000/graph/mermaid)
+
+---
+
+## 🐳 Docker & Docker Compose
+
+To run the complete production stack (FastAPI app + PostgreSQL checkpointer):
+
+```bash
+docker compose up --build -d
+```
+
+Check service logs:
+```bash
+docker compose logs -f api
+```
+
+Stop containers:
+```bash
+docker compose down
+```
+
+---
+
+## 🧪 Streaming & Interrupt Client Usage
+
+### 1. Test SSE Streaming (`/interact`)
+Run the Python streaming test client:
+```bash
+python scripts/test_client.py
+```
+
+Or test using `curl`:
+```bash
+curl -N -X POST http://localhost:8000/interact \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_choices": {"device_class": "Class II"},
+    "user_input": "What is the 510k pathway requirements for a diagnostic monitor?",
+    "useDeviceData": true,
+    "userProvidedDeiveceData": "Digital ECG monitor"
+  }'
+```
+
+### 2. Test WebSocket Streaming (`/ws/interact`)
+Run the WebSocket test script:
+```bash
+python scripts/test_ws_client.py
+```
+
+---
+
+## 🔄 Adapting for Future Projects
+
+To repurpose this codebase for any new domain (e.g. Legal Analysis, Financial Advising, Customer Service):
+
+1. **State Schema ([app/schemas/state.py](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/schemas/state.py))**: Add custom keys (e.g. `financial_metrics`, `contract_clauses`).
+2. **Nodes ([app/graphs/nodes/](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/graphs/nodes/))**: Implement domain nodes subclassing `BaseGraphNode`.
+3. **Routing ([app/graphs/routing.py](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/graphs/routing.py))**: Define conditional branching functions.
+4. **Graph Builder ([app/graphs/builder.py](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/graphs/builder.py))**: Connect nodes and edges using `StateGraph`.
+5. **Retrievers ([app/retrievers/](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/retrievers/))**: Connect domain vector indices to `EnhancedGDNCRetriever`.

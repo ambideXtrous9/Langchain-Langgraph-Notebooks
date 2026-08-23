@@ -1,0 +1,27 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	user_initpath(user_initpath)
+	classify_node(classify_node)
+	device_summary(device_summary)
+	knowledge_base(knowledge_base)
+	reason_llm(reason_llm)
+	process_feedback(process_feedback)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> user_initpath;
+	classify_node -. &nbsp;end&nbsp; .-> __end__;
+	classify_node -. &nbsp;device&nbsp; .-> device_summary;
+	classify_node -. &nbsp;knowledge&nbsp; .-> knowledge_base;
+	classify_node -. &nbsp;feedbackloop&nbsp; .-> process_feedback;
+	device_summary --> knowledge_base;
+	knowledge_base --> reason_llm;
+	process_feedback --> classify_node;
+	reason_llm --> process_feedback;
+	user_initpath --> classify_node;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
