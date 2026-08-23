@@ -2,12 +2,13 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2.28+-orange.svg)](https://langchain-ai.github.io/langgraph/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.2.2+-orange.svg)](https://langchain-ai.github.io/langgraph/)
 [![Langfuse](https://img.shields.io/badge/Observability-Langfuse-purple.svg)](https://langfuse.com/)
 [![Docker](https://img.shields.io/badge/Docker-Multi--Stage-2496ED.svg)](https://www.docker.com/)
+[![uv](https://img.shields.io/badge/Package%20Manager-uv-blueviolet.svg)](https://astral.sh/uv)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A reference implementation and production-grade boilerplate for building robust, observable, and stateful AI agent applications with **LangGraph**, **FastAPI**, **PostgreSQL Checkpointing**, **Langfuse Tracing**, **Hybrid BM25 + Cross-Encoder Reranking**, **Server-Sent Events (SSE)**, and **WebSocket Streaming**.
+A reference implementation and production-grade boilerplate for building robust, observable, and stateful AI agent applications with **LangGraph**, **FastAPI**, **OAuth2 Multi-DB Authentication & Blacklisting**, **Agent Middleware Suite (PII, Rate Limiting, HITL, Summarization)**, **Per-Agent Token Budgeting**, **Parallel Multi-Critic Research (`defer=True`)**, **PostgreSQL Checkpointing (`AsyncPostgresSaver`)**, **Langfuse Tracing**, **Server-Sent Events (SSE)**, and **WebSocket Streaming**.
 
 ---
 
@@ -172,63 +173,81 @@ Modular, extensible middleware system implementing lifecycle interception (`befo
 ```
 langgraph-project/
 ├── .env.example                # Example environment variables template
-├── .env                        # Active local environment variables
+├── .env                        # Active local environment variables (ignored by git)
 ├── .gitignore                  # Git ignore rules
-├── Dockerfile                  # Production multi-stage Docker build
+├── Dockerfile                  # Production multi-stage Docker build (uv-powered)
 ├── docker-compose.yml          # FastAPI + PostgreSQL orchestration
 ├── pyproject.toml              # Build system & pytest configuration
 ├── requirements.txt            # Python dependencies
-├── README.md                   # Comprehensive documentation
-├── AgentNotes.ipynb            # Original reference notebook
+├── README.md                   # Comprehensive architecture documentation
 ├── app/
 │   ├── __init__.py
-│   ├── main.py                 # FastAPI app, lifespan, CORS, static mounts, and routers
+│   ├── main.py                 # FastAPI application, lifespan, CORS, and router mounts
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── deps.py             # OAuth2 Bearer dependencies & token validation
+│   │   └── v1/
+│   │       ├── __init__.py
+│   │       ├── router.py       # API v1 router aggregation
+│   │       └── endpoints/
+│   │           ├── __init__.py
+│   │           ├── auth.py     # /auth/signup, /login, /me, /logout, /forgot-password, /reset-password
+│   │           ├── health.py   # /health, /graph/mermaid
+│   │           ├── research.py # /research/run, /research/stream, /research/mermaid
+│   │           ├── chat.py     # /generic_chat, /delete_session (PostgresChatMessageHistory)
+│   │           ├── sql.py      # /get_sql_query (SQL Agent)
+│   │           ├── interact.py # /interact (SSE streaming), /delete_thread, /thread state
+│   │           └── websocket.py# /ws/interact (Bidirectional streaming WebSocket)
 │   ├── core/
 │   │   ├── __init__.py
-│   │   ├── config.py           # Pydantic BaseSettings (DB, LLM, CORS, Langfuse)
-│   │   ├── database.py         # AsyncConnectionPool & Postgres checkpointing manager
+│   │   ├── config.py           # Pydantic BaseSettings (DB, LLM, Token Budgets, Auth, Langfuse)
+│   │   ├── database.py         # AsyncConnectionPool & Postgres checkpointing manager (agent_db)
+│   │   ├── auth_database.py    # Auth DB connection pool, table DDL, and token blacklist (auth_db)
+│   │   ├── security.py         # Argon2id password hashing & PyJWT token utilities
+│   │   ├── llm.py              # ChatGroq LLM factory with per-node token limit support
 │   │   ├── exceptions.py       # Custom application exceptions and error handlers
 │   │   └── observability.py    # Langfuse callback handlers and RunnableConfig builder
+│   ├── middleware/
+│   │   ├── __init__.py         # Default global middleware pipeline exports
+│   │   ├── base.py             # AgentMiddleware abstract base class & pipeline executor
+│   │   ├── pii.py              # PIIMiddleware (mask, redact, hash sensitive data)
+│   │   ├── rate_limit.py       # RateLimitMiddleware (sliding window & error budget circuit breaker)
+│   │   ├── hitl.py             # HumanInTheLoopMiddleware (sensitive tool interceptor)
+│   │   └── summarizer.py       # SummarizationMiddleware (token/message trigger history compressor)
 │   ├── schemas/
 │   │   ├── __init__.py
+│   │   ├── auth.py             # UserSignupRequest, UserLoginRequest, UserResponse, TokenResponse
 │   │   ├── state.py            # LangGraph AgentState TypedDict & Classify Pydantic model
+│   │   ├── research.py         # ResearchRequest, ResearchReport, ResearchStreamEvent
 │   │   ├── chat.py             # ChatRequest, ChatResponse, DeleteSession
 │   │   ├── sql.py              # SQLQueryRequest, SQLQueryResponse
 │   │   └── interact.py         # InteractionRequest, DeleteThreadRequest, GraphStateResponse
 │   ├── agents/
 │   │   ├── __init__.py
-│   │   ├── react_agent.py      # ReAct agent with tools (Tavily/DDG) & context chat
+│   │   ├── react_agent.py      # ReAct agent with tools (DuckDuckGo/Tavily) & middleware
 │   │   ├── sql_agent.py        # SQL agent with SQLDatabaseToolkit & query executor
 │   │   └── classifier_agent.py # Structured JSON classifier with self-correcting retry loop
 │   ├── graphs/
 │   │   ├── __init__.py
 │   │   ├── routing.py          # Conditional edge routing functions (decide_start_node)
 │   │   ├── builder.py          # GraphBuilder & StateGraph compilation factory
-│   │   └── nodes/
+│   │   ├── nodes/
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py         # BaseGraphNode abstract class
+│   │   │   ├── init_path.py    # user_initpath node
+│   │   │   ├── classify.py     # classify_node
+│   │   │   ├── device.py       # device_summary node
+│   │   │   ├── knowledge.py    # knowledge_base node
+│   │   │   ├── reason.py       # reason_llm node (tagged for SSE streaming)
+│   │   │   └── feedback.py     # process_feedback node (LangGraph interrupt)
+│   │   └── research/
 │   │       ├── __init__.py
-│   │       ├── base.py         # BaseGraphNode abstract class
-│   │       ├── init_path.py    # user_initpath node
-│   │       ├── classify.py     # classify_node
-│   │       ├── device.py       # device_summary node
-│   │       ├── knowledge.py    # knowledge_base node
-│   │       ├── reason.py       # reason_llm node (tagged for SSE streaming)
-│   │       └── feedback.py     # process_feedback node (LangGraph interrupt)
-│   ├── retrievers/
-│   │   ├── __init__.py
-│   │   ├── hybrid_reranker.py  # EnhancedGDNCRetriever (BM25 + Semantic + CrossEncoder)
-│   │   └── ensemble.py         # EnsembleRetriever builder & mock vector stores
-│   └── api/
+│   │       ├── builder.py      # ResearchGraphBuilder with parallel branches & defer=True
+│   │       └── nodes.py        # Planner, Approver, Dispatcher, Researcher, Synthesizer, Critics, Publisher
+│   └── retrievers/
 │       ├── __init__.py
-│       └── v1/
-│           ├── __init__.py
-│           ├── router.py       # API v1 router aggregation
-│           └── endpoints/
-│               ├── __init__.py
-│               ├── health.py   # /health, /graph/mermaid
-│               ├── chat.py     # /generic_chat, /delete_session (PostgresChatMessageHistory)
-│               ├── sql.py      # /get_sql_query (SQL Agent)
-│               ├── interact.py # /interact (SSE streaming), /delete_thread, /thread state
-│               └── websocket.py# /ws/interact (Bidirectional streaming WebSocket)
+│       ├── hybrid_reranker.py  # Lightweight filtering & BM25 retrieval
+│       └── ensemble.py         # Dynamic EnsembleRetriever builder
 ├── scripts/
 │   ├── init_db.py              # CLI database table verification script
 │   ├── test_client.py          # Python SSE client testing streaming & interrupt resume
@@ -236,9 +255,12 @@ langgraph-project/
 └── tests/
     ├── __init__.py
     ├── test_api.py             # FastAPI endpoint integration tests
+    ├── test_auth.py            # Signup, login, JWT verification, logout revocation, reset tests
+    ├── test_middleware.py      # PII, RateLimit, HITL, Summarization unit & pipeline tests
     ├── test_classifier.py      # Structured classifier unit tests
     ├── test_graph_builder.py   # StateGraph builder and routing unit tests
-    └── test_hybrid_retriever.py# BM25 + filtering + reranker unit tests
+    ├── test_hybrid_retriever.py# BM25 + filtering unit tests
+    └── test_research_graph.py  # Parallel research graph & defer=True join tests
 ```
 
 ---
@@ -287,15 +309,24 @@ cp .env.example .env
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `GROQ_API_KEY` | Groq API Key for high-speed LLM inference | `gsk_...` |
-| `DEFAULT_MODEL` | Groq model identifier (e.g. `openai/gpt-oss-120b`, `qwen/qwen3.6-27b`, `llama-3.3-70b-versatile`) | `openai/gpt-oss-120b` |
-| `DATABASE_URL` / `DB_URI` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/agent_db` |
-| `TABLE_NAME` | PostgreSQL table name for chat messages | `chat_message_history` |
-| `TAVILY_API_KEY` | Tavily Web Search API key | `""` |
+| `GROQ_API_KEY` | Primary Groq API Key for LLM inference | `gsk_...` |
+| `DEFAULT_MODEL` | Default model identifier on Groq | `openai/gpt-oss-120b` |
+| `PLANNER_MAX_TOKENS` | Maximum token limit for Planner node | `800` |
+| `APPROVER_MAX_TOKENS` | Maximum token limit for Approver node | `500` |
+| `SYNTHESIZER_MAX_TOKENS` | Maximum token limit for Synthesizer node | `1500` |
+| `FACT_CRITIC_MAX_TOKENS` | Maximum token limit for Fact Critic node | `600` |
+| `STYLE_CRITIC_MAX_TOKENS` | Maximum token limit for Style Critic nodes | `600` |
+| `PUBLISHER_MAX_TOKENS` | Maximum token limit for Publisher node | `2500` |
+| `GENERIC_CHAT_MAX_TOKENS` | Maximum token limit for Generic Chat agent | `1500` |
+| `DATABASE_URL` / `DB_URI` | PostgreSQL connection string for `agent_db` | `postgresql://postgres:postgres@localhost:5432/agent_db` |
+| `AUTH_DATABASE_URL` | PostgreSQL connection string for `auth_db` | `postgresql://postgres:postgres@localhost:5432/auth_db` |
+| `JWT_SECRET_KEY` | Secret key for cryptographic signing of JWTs | `enterprise-langgraph-secret-key-32-chars-minimum-prod` |
+| `JWT_ALGORITHM` | JWT signing algorithm | `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifespan | `60` |
+| `RESET_TOKEN_EXPIRE_MINUTES` | Password reset token lifespan | `15` |
+| `ENABLE_DDG_SEARCH` | Enable DuckDuckGo live web intelligence | `True` |
+| `TAVILY_API_KEY` | Optional Tavily Web Search API key | `""` |
 | `LANGFUSE_ENABLED` | Enable Langfuse tracing | `False` |
-| `LANGFUSE_PUBLIC_KEY` | Langfuse Public Key | `""` |
-| `LANGFUSE_SECRET_KEY` | Langfuse Secret Key | `""` |
-| `LANGFUSE_HOST` | Langfuse Host URL | `https://cloud.langfuse.com` |
 | `CORS_ORIGINS` | Allowed CORS origins (JSON array or comma-separated) | `["*"]` |
 
 ---
