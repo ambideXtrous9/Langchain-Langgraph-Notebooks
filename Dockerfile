@@ -35,10 +35,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install runtime system libraries (libpq, curl for healthcheck)
+# Install runtime system libraries (libpq, curl for healthcheck, nodejs & npm for MCP stdio servers)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root system user for security

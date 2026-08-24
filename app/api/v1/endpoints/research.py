@@ -95,6 +95,26 @@ async def stream_research_events(
 
                 yield f"data: {json.dumps({'stage': node_name, 'status': 'completed', 'hint': hint_msg})}\n\n"
 
+            # 2c. Dynamic Tool Execution Start Hints (specialized with query parameters)
+            elif event_type == "on_tool_start":
+                tool_name = event.get("name", "tool")
+                tool_input = event.get("data", {}).get("input") or {}
+                query_param = ""
+                if isinstance(tool_input, dict):
+                    query_param = tool_input.get("query") or tool_input.get("q") or tool_input.get("search_query") or ""
+                elif isinstance(tool_input, str):
+                    query_param = tool_input
+
+                query_disp = f" for '{query_param[:45]}...'" if query_param else f" for topic '{topic[:35]}...'"
+                tool_hint = f"Web Intelligence Tool [{tool_name}]: Searching live regulatory briefings{query_disp}..."
+                yield f"data: {json.dumps({'event': 'tool_start', 'tool': tool_name, 'data': tool_hint})}\n\n"
+
+            # 2d. Dynamic Tool Execution End Hints
+            elif event_type == "on_tool_end":
+                tool_name = event.get("name", "tool")
+                tool_hint = f"Web Intelligence Tool [{tool_name}]: Live briefs retrieved for '{topic[:35]}...'"
+                yield f"data: {json.dumps({'event': 'tool_end', 'tool': tool_name, 'data': tool_hint})}\n\n"
+
             # 3. Stream tokens ONLY from the final publisher node
             elif event_type == "on_chat_model_stream":
                 if any(tag in ["Publisher", "ResearchPublisher"] for tag in event_tags):
