@@ -20,9 +20,19 @@ from app.api.deps import get_current_active_user
 from app.schemas.auth import UserResponse
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # In-memory fallback for local dev when PostgreSQL is unavailable
 _in_memory_chat_history: Dict[str, List[BaseMessage]] = {}
+
+
+def _normalize_session_id(session_id: str) -> str:
+    """Ensures session_id is a valid UUID string required by PostgresChatMessageHistory."""
+    try:
+        uuid.UUID(session_id)
+        return session_id
+    except (ValueError, TypeError):
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, session_id))
 
 
 @router.post("/generic_chat", response_model=ChatResponse, tags=["Chat"])
@@ -33,7 +43,8 @@ async def generic_chat_endpoint(
 ):
     """Processes a generic chat query maintaining conversation history in PostgreSQL."""
     try:
-        session_id = req.session_id or f"user-{current_user.id}-{uuid.uuid4()}"
+        raw_session_id = req.session_id or f"user-{current_user.id}-{uuid.uuid4()}"
+        session_id = _normalize_session_id(raw_session_id)
         db_pool = getattr(request.app.state, "db_pool", None)
         run_config = get_runnable_config(
             session_id=session_id,
@@ -92,6 +103,7 @@ async def delete_session_endpoint(
     """Deletes all messages for a specific session_id from the PostgreSQL chat history table."""
     try:
         db_pool = getattr(request.app.state, "db_pool", None)
+        session_id = _normalize_session_id(req.session_id)
 
         if db_pool:
             query_check = f"SELECT COUNT(*) FROM {settings.TABLE_NAME} WHERE session_id = %s"
@@ -99,7 +111,7 @@ async def delete_session_endpoint(
 
             async with db_pool.connection() as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute(query_check, (req.session_id,))
+                    await cur.execute(query_check, (session_id,))
                     row = await cur.fetchone()
                     count = row[0] if row else 0
 
@@ -109,15 +121,15 @@ async def delete_session_endpoint(
                             detail="No chat session found with this ID",
                         )
 
-                    await cur.execute(query_delete, (req.session_id,))
+                    await cur.execute(query_delete, (session_id,))
 
             return DeleteSessionResponse(
                 message="Chat session deleted successfully",
                 session_id=req.session_id,
             )
         else:
-            if req.session_id in _in_memory_chat_history:
-                del _in_memory_chat_history[req.session_id]
+            if session_id in _in_memory_chat_history:
+                del _in_memory_chat_history[session_id]
                 return DeleteSessionResponse(
                     message="Chat session deleted successfully",
                     session_id=req.session_id,
