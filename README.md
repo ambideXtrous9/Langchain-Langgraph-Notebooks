@@ -159,11 +159,68 @@ flowchart TD
 - The `process_feedback` node uses LangGraph's `interrupt()` primitive to safely suspend execution without blocking threads.
 - Graph resumes execution upon receiving user feedback via `Command(resume=..., update=...)`.
 
-### 5. Model Context Protocol (MCP) Integration & Lifespan Management (`app/core/mcp.py`)
-- **FastAPI Lifespan Lifecycle**: MCP servers (e.g. `npx -y @openbnb/mcp-server-airbnb`) are initialized during FastAPI application startup via `mcp_manager.initialize()` and gracefully cleaned up during shutdown via `mcp_manager.shutdown()`.
-- **Dynamic Tool Discovery**: Bridges stdio/SSE MCP client sessions to LangChain `BaseTool` instances using `langchain_mcp_adapters.tools.load_mcp_tools`.
-- **Resilient Fallback**: Automatically activates built-in fallback search tool adapters if stdio MCP server subprocesses are unavailable.
-- **Multi-Agent Orchestration**: Connects MCP tools to specialized ReAct agents executing concurrently in parallel before synthesizing holistic travel & stay guides.
+### 5. Model Context Protocol (MCP) Integration & Lifespan Architecture (`app/core/mcp.py`)
+
+#### A. Architecture & Lifespan Flow
+```
+                               ┌─────────────────────────────────────────────────────────┐
+                               │           FASTAPI APPLICATION LIFESPAN STARTUP          │
+                               └────────────────────────────┬────────────────────────────┘
+                                                            │
+                                                            ▼
+                               ┌─────────────────────────────────────────────────────────┐
+                               │            MCPClientManager.initialize()                │
+                               │  - Spawns stdio subprocess:                             │
+                               │    npx -y @openbnb/mcp-server-airbnb --ignore-robots-txt│
+                               │  - Opens ClientSession over stdio transport             │
+                               │  - Calls session.initialize() handshake                 │
+                               │  - load_mcp_tools(session) -> LangChain BaseTool list   │
+                               │  - Caches tools in app.state.mcp_manager                │
+                               └────────────────────────────┬────────────────────────────┘
+                                                            │
+                               ┌────────────────────────────┴────────────────────────────┐
+                               │                                                         │
+                               ▼                                                         ▼
+            ┌──────────────────────────────────────┐                  ┌──────────────────────────────────────┐
+            │          airbnbAgent (Node)          │                  │          weatherAgent (Node)         │
+            │  - Bound with MCP discovered tools   │                  │  - Bound with WeatherForecast tool   │
+            │  - Invokes create_react_agent        │                  │  - WeatherAPI with Open-Meteo fallback│
+            └──────────────────┬───────────────────┘                  └──────────────────┬───────────────────┘
+                               │                                                         │
+                               └────────────────────────────┬────────────────────────────┘
+                                                            │ (Fan-In)
+                                                            ▼
+                               ┌─────────────────────────────────────────────────────────┐
+                               │             tourAgent Synthesis Node                    │
+                               │  - Merges Airbnb property listings & Weather forecast   │
+                               │  - Synthesizes customized travel advisory & stay match  │
+                               │  - Streams tokens tagged with ["TourGuideExpert"]       │
+                               └────────────────────────────┬────────────────────────────┘
+                                                            │
+                                                            ▼
+                               ┌─────────────────────────────────────────────────────────┐
+                               │           FASTAPI APPLICATION LIFESPAN SHUTDOWN         │
+                               │  - MCPClientManager.shutdown()                          │
+                               │  - Closes stdio sessions and terminates subprocesses    │
+                               └─────────────────────────────────────────────────────────┘
+```
+
+#### B. Transport Evaluation: `npx @openbnb/mcp-server-airbnb` (stdio) vs Docker Hub Container
+When selecting the integration method between the **`mcp.so` NPM/npx stdio subprocess** and the **Docker Hub container image (`openbnb-airbnb`)**:
+
+| Architectural Dimension | **`npx @openbnb/mcp-server-airbnb` (stdio)** *(Chosen)* | **Docker Image `openbnb-airbnb`** *(Container)* |
+| :--- | :--- | :--- |
+| **Transport Protocol** | **Native `stdio` (Standard I/O pipe)** | **Container Subprocess / Network SSE** |
+| **Latency & Throughput** | ⚡ **Microsecond latency** (direct pipe in OS process memory) | 🐢 Higher (Docker daemon invocation & container boot) |
+| **FastAPI Container Security** | 🔒 **Secure** — Node.js runs as standard unprivileged app user | ⚠️ Requires mounting `/var/run/docker.sock` (root-level breakout risk) |
+| **Port & Network Management** | 🟢 **Zero ports needed** (no port conflicts or bridge networks) | 🟡 Requires managing port bindings or virtual networks |
+| **Resource Footprint** | 🟢 Minimal (~30–50MB RAM for lightweight Node.js worker) | 🟡 Container runtime daemon & image storage overhead |
+| **LangGraph MCP Adapters** | 🟢 100% native alignment with `langchain-mcp-adapters` | 🟡 Requires SSE transport bridge or docker-exec wrappers |
+
+**Why `stdio` (npx) was selected:**
+1. **Zero Privileged Sockets**: Spawning Docker containers from within a containerized FastAPI application requires mounting the host Docker socket (`/var/run/docker.sock`), which presents high security risks in production. Running `npx` in-process avoids this entirely.
+2. **Deterministic Lifecycle**: Process lifecycle is synchronously bound to FastAPI's `lifespan` context manager via `asyncio`.
+3. **Resilient Fallback**: If the external stdio MCP server is offline or fails network resolution, `MCPClientManager` automatically falls back to internal search adapters with zero service interruption.
 
 ### 6. SQL Agent with SQLDatabaseToolkit
 - Natural language to SQL generation and execution using `create_sql_agent` with toolkits, returning synthesized explanations, the exact SQL query, and raw tabular results.
