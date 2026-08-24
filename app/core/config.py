@@ -95,6 +95,15 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
 
+    # --- MCP (Model Context Protocol) Settings ---
+    ENABLE_AIRBNB_MCP: bool = True
+    AIRBNB_MCP_COMMAND: str = "npx"
+    AIRBNB_MCP_ARGS: Union[List[str], str] = ["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
+    WEATHER_API_KEY: str = Field(default="", description="WeatherAPI.com API Key")
+    AIRBNB_AGENT_MAX_TOKENS: int = 1500
+    WEATHER_AGENT_MAX_TOKENS: int = 1000
+    TOUR_AGENT_MAX_TOKENS: int = 2500
+
     # --- Hybrid Retriever & Reranking ---
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"
     BM25_DEFAULT_WEIGHT: float = 0.3

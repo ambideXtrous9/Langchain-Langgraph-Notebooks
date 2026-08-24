@@ -123,12 +123,26 @@ graph TD;
 	classDef last fill:#bfb6fc
 ```
 
+#### C. Model Context Protocol (MCP) Multi-Agent Travel Graph (Parallel Fan-Out / Fan-In)
+```mermaid
+flowchart TD
+    Start([User Travel Query]) --> AirbnbAgent[1. airbnbAgent\nReAct Agent with Airbnb MCP Tools]
+    Start --> WeatherAgent[2. weatherAgent\nReAct Agent with WeatherAPI / Open-Meteo]
+    
+    AirbnbAgent --> TourAgent[3. tourAgent\nTour Guide Synthesizer & Stay-Weather Match]
+    WeatherAgent --> TourAgent
+    TourAgent --> EndNode([END])
+    
+    classDef default fill:#f2f0ff,line-height:1.2
+```
+
 ---
 
 ## ⚙️ Core Mechanisms & Design Patterns
 
 ### 1. LangGraph StateGraph & Class-Based Nodes
 - **`AgentState` TypedDict**: Manages `tree`, `user_choices`, `current_path_str`, `user_decisions_str`, `context_docs_str`, `classification`, `feedback`, `useDeviceData`, `userProvidedDeiveceData`, and `chat_history` with the `add_messages` reducer.
+- **`MCPTravelState` TypedDict**: Manages `topic`, `knowledge` (`add_messages` reducer), `airbnb_report`, `weather_report`, and `summary`.
 - **Modular OOP Nodes**: Each node inherits from [BaseGraphNode](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/graphs/nodes/base.py) providing standardized execution boundaries, error handling, and tracing.
 
 ### 2. PostgreSQL Checkpointing (`AsyncPostgresSaver`)
@@ -138,17 +152,18 @@ graph TD;
 
 ### 3. Server-Sent Events (SSE) & WebSocket Streaming
 - **SSE Endpoint (`/interact`)**: Streams the generated `thread_id` first, then yields real-time token chunks using `graph.astream_events(..., version="v2")` filtered on `on_chat_model_stream` and `tags=["RegulatoryExpert"]`.
+- **SSE MCP Travel Endpoint (`/mcp/travel/stream`)**: Yields dynamic agent execution hints (`airbnbAgent`, `weatherAgent`, `tourAgent`) and streams raw token chunks tagged with `tags=["TourGuideExpert"]`.
 - **WebSocket Endpoint (`/ws/interact`)**: Full-duplex bidirectional streaming supporting initial conversations and instant interrupt resume commands.
 
 ### 4. Human-in-the-Loop Interrupts & Resumes
 - The `process_feedback` node uses LangGraph's `interrupt()` primitive to safely suspend execution without blocking threads.
 - Graph resumes execution upon receiving user feedback via `Command(resume=..., update=...)`.
 
-### 5. Hybrid Search with Cross-Encoder Reranking (`EnhancedGDNCRetriever`)
-- Combines sparse keyword search (**BM25Okapi**) and dense semantic vector search with normalized weighting (`bm25_weight * bm25_norm + (1 - bm25_weight) * semantic_norm`).
-- **Cross-Encoder Model** (`cross-encoder/ms-marco-MiniLM-L-12-v2`) reranks candidates.
-- **Source-Aware Filtering**: Drops blank, index, table of contents, and reference pages while applying source-frequency weighting.
-- **Ensemble Retrieval**: Dynamic [make_ensemble](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/retrievers/ensemble.py) combines domain vector databases (CFR regulations, ISO standards, FDA guidance).
+### 5. Model Context Protocol (MCP) Integration & Lifespan Management (`app/core/mcp.py`)
+- **FastAPI Lifespan Lifecycle**: MCP servers (e.g. `npx -y @openbnb/mcp-server-airbnb`) are initialized during FastAPI application startup via `mcp_manager.initialize()` and gracefully cleaned up during shutdown via `mcp_manager.shutdown()`.
+- **Dynamic Tool Discovery**: Bridges stdio/SSE MCP client sessions to LangChain `BaseTool` instances using `langchain_mcp_adapters.tools.load_mcp_tools`.
+- **Resilient Fallback**: Automatically activates built-in fallback search tool adapters if stdio MCP server subprocesses are unavailable.
+- **Multi-Agent Orchestration**: Connects MCP tools to specialized ReAct agents executing concurrently in parallel before synthesizing holistic travel & stay guides.
 
 ### 6. SQL Agent with SQLDatabaseToolkit
 - Natural language to SQL generation and execution using `create_sql_agent` with toolkits, returning synthesized explanations, the exact SQL query, and raw tabular results.
@@ -160,7 +175,7 @@ graph TD;
 - Non-blocking tracing and telemetry integration using `langfuse.callback.CallbackHandler` attached to LangGraph `RunnableConfig`.
 
 ### 9. Agent Middleware Architecture (`app/middleware/`)
-Modular, extensible middleware system implementing lifecycle interception (`before_agent`, `before_model`, `after_model`, `before_tools`, `after_tools`, `after_agent`):
+Modular, extensible middleware system implementing lifecycle interception (`run_before_agent`, `run_before_model`, `run_after_model`, `run_before_tools`, `run_after_tools`, `run_after_agent`):
 - **`PIIMiddleware`**: Detects and sanitizes emails, phone numbers, SSNs, credit cards, medical record IDs (MRN/PHI), and IPv4 addresses via `mask`, `redact`, or `hash` strategies.
 - **`RateLimitMiddleware`**: Sliding-window rate limiter per user/session, consecutive error count tracking, circuit breaker protection, and reasoning confidence auditing.
 - **`HumanInTheLoopMiddleware`**: Intercepts sensitive tool calls (e.g. `execute_sql_mutation`, `submit_fda_filing`) and pauses execution until human authorization is granted.
@@ -227,6 +242,9 @@ langgraph-project/
 │   │   ├── react_agent.py      # ReAct agent with tools (DuckDuckGo/Tavily) & middleware
 │   │   ├── sql_agent.py        # SQL agent with SQLDatabaseToolkit & query executor
 │   │   └── classifier_agent.py # Structured JSON classifier with self-correcting retry loop
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   └── weather.py          # Weather forecast tool (WeatherAPI with Open-Meteo fallback)
 │   ├── graphs/
 │   │   ├── __init__.py
 │   │   ├── routing.py          # Conditional edge routing functions (decide_start_node)
@@ -240,10 +258,14 @@ langgraph-project/
 │   │   │   ├── knowledge.py    # knowledge_base node
 │   │   │   ├── reason.py       # reason_llm node (tagged for SSE streaming)
 │   │   │   └── feedback.py     # process_feedback node (LangGraph interrupt)
-│   │   └── research/
+│   │   ├── research/
+│   │   │   ├── __init__.py
+│   │   │   ├── builder.py      # ResearchGraphBuilder with parallel branches & defer=True
+│   │   │   └── nodes.py        # Planner, Approver, Dispatcher, Researcher, Synthesizer, Critics, Publisher
+│   │   └── mcp/
 │   │       ├── __init__.py
-│   │       ├── builder.py      # ResearchGraphBuilder with parallel branches & defer=True
-│   │       └── nodes.py        # Planner, Approver, Dispatcher, Researcher, Synthesizer, Critics, Publisher
+│   │       ├── builder.py      # MCPTravelGraphBuilder with concurrent Airbnb/Weather fan-out
+│   │       └── nodes.py        # Airbnb Agent (MCP tools), Weather Agent, and Tour Guide nodes
 │   └── retrievers/
 │       ├── __init__.py
 │       ├── hybrid_reranker.py  # Lightweight filtering & BM25 retrieval
@@ -260,7 +282,8 @@ langgraph-project/
     ├── test_classifier.py      # Structured classifier unit tests
     ├── test_graph_builder.py   # StateGraph builder and routing unit tests
     ├── test_hybrid_retriever.py# BM25 + filtering unit tests
-    └── test_research_graph.py  # Parallel research graph & defer=True join tests
+    ├── test_research_graph.py  # Parallel research graph & defer=True join tests
+    └── test_mcp.py             # Model Context Protocol (MCP) and multi-agent travel tests
 ```
 
 ---
@@ -270,7 +293,7 @@ langgraph-project/
 ### 1. Authentication & User Access (`auth_db`)
 | Method | Path | Description | Key Request Params / Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/auth/signup` | Register a new user with Argon2 password hashing | `{"email": "...", "full_name": "...", "password": "..."}` |
+| `POST` | `/auth/signup` | Register a new user with Argon2id password hashing | `{"email": "...", "full_name": "...", "password": "..."}` |
 | `POST` | `/auth/login` | OAuth2 Password login & JWT access token generation | `username`, `password` (Form data) |
 | `GET` | `/auth/me` | Retrieve authenticated user profile | Bearer Token (`Authorization: Bearer <token>`) |
 | `POST` | `/auth/logout` | Revoke token and add to `token_blacklist` | Bearer Token (`Authorization: Bearer <token>`) |
@@ -278,23 +301,31 @@ langgraph-project/
 | `POST` | `/auth/reset-password` | Verify reset token and update hashed password | `{"token": "...", "new_password": "..."}` |
 
 ### 2. Autonomous Research Pipeline (Parallel Multi-Critic + `defer=True`)
-| Method | Path | Description | Key Request Params |
+| Method | Path | Description | Key Request Params / Auth |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/research/run` | Synchronous parallel research with DuckDuckGo search | `{"topic": "..."}` |
-| `POST` | `/research/stream` | **SSE token & dynamic hint streaming** from Publisher | `{"topic": "..."}` |
+| `POST` | `/research/run` | Synchronous parallel research with DuckDuckGo search | `{"topic": "..."}`, `Bearer <token>` |
+| `POST` | `/research/stream` | **SSE token & dynamic hint streaming** from Publisher | `{"topic": "..."}`, `Bearer <token>` |
 | `GET` | `/research/mermaid` | Live Mermaid diagram of compiled parallel graph | None |
 
-### 3. Stateful Regulatory Decision-Tree (`agent_db`)
-| Method | Path | Description | Key Request Params |
+### 3. Model Context Protocol (MCP) Multi-Agent Travel Pipeline
+| Method | Path | Description | Key Request Params / Auth |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/mcp/tools` | List registered MCP servers, connection status & discovered tools | Bearer Token (`Authorization: Bearer <token>`) |
+| `POST` | `/mcp/travel/run` | Synchronous execution of concurrent Airbnb MCP & Weather agents | `{"topic": "..."}`, `Bearer <token>` |
+| `POST` | `/mcp/travel/stream` | **SSE streaming** with live agent hints and Tour Guide tokens | `{"topic": "..."}`, `Bearer <token>` |
+| `GET` | `/mcp/travel/mermaid` | Mermaid flowchart definition of compiled MCP graph | None |
+
+### 4. Stateful Regulatory Decision-Tree (`agent_db`)
+| Method | Path | Description | Key Request Params / Auth |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Application health and database connection status | None |
 | `GET` | `/graph/mermaid` | Mermaid flowchart definition of compiled LangGraph | None |
-| `POST` | `/generic_chat` | Context-aware chat with `PostgresChatMessageHistory` | `{"user_input": "...", "session_id": "..."}` |
-| `DELETE` | `/delete_session` | Delete chat messages for a session from PostgreSQL | `{"session_id": "..."}` |
-| `POST` | `/get_sql_query` | Natural language Text-to-SQL agent query | `{"query": "Show devices approved in 2023"}` |
-| `POST` | `/interact` | **SSE streaming** graph execution with Human-in-the-Loop | `{"user_choices": {...}, "user_input": "..."}` |
-| `GET` | `/thread/{thread_id}/state` | Live checkpoint inspection for active thread | `thread_id` (path param) |
-| `DELETE` | `/delete_thread` | Delete graph checkpoint from `AsyncPostgresSaver` | `{"thread_id": "..."}` |
+| `POST` | `/generic_chat` | Context-aware chat with `PostgresChatMessageHistory` | `{"user_input": "...", "session_id": "..."}`, `Bearer <token>` |
+| `DELETE` | `/delete_session` | Delete chat messages for a session from PostgreSQL | `{"session_id": "..."}`, `Bearer <token>` |
+| `POST` | `/get_sql_query` | Natural language Text-to-SQL agent query | `{"query": "..."}`, `Bearer <token>` |
+| `POST` | `/interact` | **SSE streaming** graph execution with Human-in-the-Loop | `{"user_choices": {...}, "user_input": "..."}`, `Bearer <token>` |
+| `GET` | `/thread/{thread_id}/state` | Live checkpoint inspection for active thread | `thread_id` (path param), `Bearer <token>` |
+| `DELETE` | `/delete_thread` | Delete graph checkpoint from `AsyncPostgresSaver` | `{"thread_id": "..."}`, `Bearer <token>` |
 | `WS` | `/ws/interact` | **WebSocket** bidirectional streaming & interrupts | JSON message payloads |
 
 ---
@@ -326,6 +357,13 @@ cp .env.example .env
 | `RESET_TOKEN_EXPIRE_MINUTES` | Password reset token lifespan | `15` |
 | `ENABLE_DDG_SEARCH` | Enable DuckDuckGo live web intelligence | `True` |
 | `TAVILY_API_KEY` | Optional Tavily Web Search API key | `""` |
+| `ENABLE_AIRBNB_MCP` | Enable Airbnb Stdio MCP server | `True` |
+| `AIRBNB_MCP_COMMAND` | Subprocess executable command | `npx` |
+| `AIRBNB_MCP_ARGS` | Arguments passed to MCP server | `["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]` |
+| `WEATHER_API_KEY` | WeatherAPI.com API key (Open-Meteo fallback if empty) | `""` |
+| `AIRBNB_AGENT_MAX_TOKENS` | Token ceiling for Airbnb MCP agent | `1500` |
+| `WEATHER_AGENT_MAX_TOKENS` | Token ceiling for Weather agent | `1000` |
+| `TOUR_AGENT_MAX_TOKENS` | Token ceiling for Tour Guide agent | `2500` |
 | `LANGFUSE_ENABLED` | Enable Langfuse tracing | `False` |
 | `CORS_ORIGINS` | Allowed CORS origins (JSON array or comma-separated) | `["*"]` |
 
@@ -402,7 +440,23 @@ curl -N -X POST http://localhost:8000/interact \
   }'
 ```
 
-### 2. Test WebSocket Streaming (`/ws/interact`)
+### 2. Test Parallel Research SSE Stream (`/research/stream`)
+```bash
+curl -N -X POST http://localhost:8000/research/stream \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_jwt_access_token>" \
+  -d '{"topic": "Future of robotic laparoscopic surgery and FDA safety alerts"}'
+```
+
+### 3. Test MCP Travel & Accommodation SSE Stream (`/mcp/travel/stream`)
+```bash
+curl -N -X POST http://localhost:8000/mcp/travel/stream \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_jwt_access_token>" \
+  -d '{"topic": "Find me the top 5 Airbnb in Darjeeling for next 3 days within 8000 for 2 people"}'
+```
+
+### 4. Test WebSocket Streaming (`/ws/interact`)
 Run the WebSocket test script:
 ```bash
 python scripts/test_ws_client.py

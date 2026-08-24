@@ -10,10 +10,12 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.core.database import db_manager
 from app.core.auth_database import auth_db_manager
+from app.core.mcp import mcp_manager
 from app.core.exceptions import register_exception_handlers
 from app.core.observability import flush_langfuse, init_langfuse
 from app.graphs.builder import create_graph, GraphBuilder
 from app.graphs.research.builder import ResearchGraphBuilder
+from app.graphs.mcp.builder import MCPTravelGraphBuilder
 from app.api.v1.router import api_router
 
 # Configure structured logging
@@ -41,17 +43,25 @@ async def lifespan(app: FastAPI):
     await auth_db_manager.initialize()
     app.state.auth_db_pool = auth_db_manager.pool
 
-    # 4. Build & Compile Main Regulatory Decision Graph
+    # 4. Initialize MCP (Model Context Protocol) Client Manager & Load Tools
+    await mcp_manager.initialize()
+    app.state.mcp_manager = mcp_manager
+
+    # 5. Build & Compile Main Regulatory Decision Graph
     builder = GraphBuilder(checkpointer=app.state.checkpointer)
     builder.build()
     app.state.graph = builder.compile()
 
-    # 5. Build & Compile Parallel Research, Critic & Publisher Graph (defer=True)
+    # 6. Build & Compile Parallel Research, Critic & Publisher Graph (defer=True)
     research_builder = ResearchGraphBuilder(checkpointer=app.state.checkpointer)
     research_builder.build()
     app.state.research_graph = research_builder.compile()
 
-    # 6. Export Graph Visualizations
+    # 7. Build & Compile MCP Travel & Intelligence Multi-Agent Graph
+    mcp_travel_builder = MCPTravelGraphBuilder(checkpointer=app.state.checkpointer)
+    app.state.mcp_travel_graph = mcp_travel_builder.build_graph()
+
+    # 8. Export Graph Visualizations
     os.makedirs("app/static", exist_ok=True)
     builder.save_visualization("app/static/graph.png")
     research_builder.save_visualization("app/static/research_graph.png")
@@ -62,6 +72,7 @@ async def lifespan(app: FastAPI):
 
     # Teardown
     logger.info("Shutting down application resources...")
+    await mcp_manager.shutdown()
     flush_langfuse()
     await auth_db_manager.close()
     await db_manager.close()
