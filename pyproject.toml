@@ -27,6 +27,9 @@ dependencies = [
     "python-multipart>=0.0.32",
 ]
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q --asyncio-mode=auto"

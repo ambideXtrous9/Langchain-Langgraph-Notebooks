@@ -117,7 +117,7 @@ async def stream_mcp_travel(
                 tags = event.get("tags", [])
 
                 # 2a. Dynamic Node Start Hints specialized to user topic
-                if event_type == "on_chain_start" and node_name in ["airbnbAgent", "weatherAgent", "tourAgent"] and node_name not in seen_start_nodes:
+                if event_type in ["on_chain_start", "on_chat_model_start"] and node_name in ["airbnbAgent", "weatherAgent", "tourAgent"] and node_name not in seen_start_nodes:
                     seen_start_nodes.add(node_name)
                     if node_name == "airbnbAgent":
                         hint = f"Airbnb Agent: Analyzing accommodation criteria and searching available listings for '{topic[:45]}...'"
@@ -167,6 +167,9 @@ async def stream_mcp_travel(
                         hint = f"Weather Agent: Prepared climate advisories and temperature summary for '{topic[:40]}...'"
                     elif node_name == "tourAgent":
                         hint = f"Tour Guide Expert: Finalized travel plan and recommendations for '{topic[:40]}...'"
+                        output = event.get("data", {}).get("output") or {}
+                        if isinstance(output, dict) and "summary" in output:
+                            final_summary = output["summary"]
                     else:
                         hint = f"Completed Agent: {node_name} for '{topic[:40]}...'"
 
@@ -185,7 +188,11 @@ async def stream_mcp_travel(
                             tokens_streamed = True
                             yield f"data: {json.dumps({'event': 'token', 'agent': 'tourAgent', 'data': token_text})}\n\n"
 
-            # 4. Final done event
+            # 4. Fallback if tokens were not streamed in real-time
+            if not tokens_streamed and 'final_summary' in locals() and final_summary:
+                yield f"data: {json.dumps({'event': 'token', 'agent': 'tourAgent', 'data': final_summary})}\n\n"
+
+            # 5. Final done event
             yield f"data: {json.dumps({'event': 'done', 'data': f'Travel planning and accommodation intelligence complete for {topic[:40]}...'})}\n\n"
         except Exception as exc:
             logger.error(f"Error streaming MCP travel: {exc}", exc_info=True)

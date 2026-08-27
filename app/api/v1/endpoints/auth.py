@@ -78,27 +78,49 @@ async def signup_endpoint(request: UserSignupRequest):
     "/login",
     response_model=TokenResponse,
     summary="Authenticate and receive JWT token",
-    description="Authenticates user credentials and returns a signed JWT Bearer token. Compatible with OAuth2 password form.",
+    description="Authenticates user credentials and returns a signed JWT Bearer token. Compatible with OAuth2 password form and JSON requests.",
 )
 async def login_endpoint(
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    request: Request,
 ):
-    """Authenticates credentials from OAuth2 form data (username=email)."""
-    email = form_data.username.strip().lower()
-    password = form_data.password
+    """Authenticates credentials from OAuth2 form data (username=email) or JSON payload."""
+    email = None
+    password = None
+
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+            email = (body.get("email") or body.get("username") or "").strip().lower()
+            password = body.get("password") or ""
+        except Exception:
+            pass
+    else:
+        try:
+            form = await request.form()
+            email = (form.get("username") or form.get("email") or "").strip().lower()
+            password = form.get("password") or ""
+        except Exception:
+            pass
+
+    if not email or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email and password are required.",
+        )
 
     user_dict = await auth_db_manager.get_user_by_email(email)
     if not user_dict:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password.",
+            detail="Incorrect email or password. Account not found; please click the 'Register' tab to create an account.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     if not verify_password(password, user_dict["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password.",
+            detail="Incorrect email or password. Please verify your password or use 'Forgot Password'.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

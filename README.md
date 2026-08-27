@@ -28,6 +28,20 @@ A reference implementation and production-grade boilerplate for building robust,
 
 ## 🏛️ Architectural Overview
 
+### 0. Agent Architecture & Cognitive Subsystems
+
+<p align="center">
+  <img src="./assets/agent_architecture.png" alt="Agent Cognitive Architecture" width="850"/>
+</p>
+
+The architecture implements an end-to-end agentic workflow combining:
+- **Planning & Reasoning:** Chain of thoughts, Reflection, Self-critics, Subgoal decomposition, and parallel review pipelines (`defer=True`).
+- **Memory Systems:** Short-term state memory (`add_messages` reducer) and Long-term thread memory (`AsyncPostgresSaver` PostgreSQL checkpointing).
+- **Tools & Model Context Protocol (MCP):** Dynamic tool binding, stdio MCP server integrations, geocoding, meteorological forecasts, and API tools.
+- **Action Execution:** Coordinated fan-out/fan-in graph node execution and real-time streaming output.
+
+---
+
 ### 1. System Gateway & Multi-DB Architecture (Authentication & Authorization)
 
 The system is decoupled into **Public Authentication** and **Protected Agent Services** backed by dual isolated databases in PostgreSQL:
@@ -446,14 +460,23 @@ uv pip install -r requirements.txt
 uv run pytest
 ```
 
-### 3. Start the FastAPI Server
+### 3. Start the FastAPI Backend Server
 ```bash
-# Run FastAPI server with hot-reload
+# Run pure FastAPI API Gateway on port 8000
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 - Swagger UI Interactive Docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 - ReDoc API Documentation: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 - Compiled Graph Mermaid View: [http://localhost:8000/graph/mermaid](http://localhost:8000/graph/mermaid)
+
+### 4. Start the Standalone Chat Frontend (Decoupled)
+```bash
+# Start frontend client on independent port 3000
+cd frontend
+python3 -m http.server 3000
+# or: npx serve -l 3000 .
+```
+- ChatGPT-Style Web UI (RP360 Theme): [http://localhost:3000/](http://localhost:3000/)
 
 ---
 
