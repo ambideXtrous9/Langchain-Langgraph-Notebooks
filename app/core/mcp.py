@@ -1,120 +1,16 @@
 """Model Context Protocol (MCP) Client and Lifespan Manager."""
 
 import asyncio
-from contextlib import AsyncExitStack
+import json
 import logging
 import os
 import shutil
 from typing import Any, Dict, List, Optional
-from langchain_core.tools import BaseTool, tool
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-from langchain_mcp_adapters.tools import load_mcp_tools
+from langchain_core.tools import BaseTool
+from langchain_mcp_adapters.client import MultiServerMCPClient
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-
-import json
-from pydantic import BaseModel, Field
-
-
-class AirbnbSearchInput(BaseModel):
-    location: str = Field(description="Target city or destination, e.g. 'Darjeeling, India' or 'Paris, France'")
-    query: str = Field(default="", description="Specific accommodation requirements, e.g. 'cottage mountain view'")
-    adults: int = Field(default=2, description="Number of adult guests")
-
-
-@tool("airbnb_search", args_schema=AirbnbSearchInput)
-async def smart_airbnb_search(location: str, query: str = "", adults: int = 2) -> str:
-    """Search for Airbnb listings, accommodations, rates, amenities, and direct booking links via the openbnb MCP server.
-
-    Args:
-        location: Target city or destination (e.g. 'Darjeeling, India').
-        query: Specific accommodation requirements (e.g. 'cottage mountain view').
-        adults: Number of adult guests.
-
-    Returns:
-        Structured listings and geocoded booking links from the Airbnb MCP server.
-    """
-    loc_str = location or "Darjeeling, India"
-    
-    # 1. Invoke the live openbnb MCP session over stdio
-    session = mcp_manager.get_server_session("airbnb")
-    search_url = f"https://www.airbnb.com/s/{loc_str.replace(' ', '-').replace(',', '--')}/homes"
-    mcp_listings = []
-
-    if session:
-        try:
-            mcp_res = await session.call_tool("airbnb_search", arguments={
-                "location": loc_str,
-                "adults": int(adults),
-                "propertyType": "entire_home",
-            })
-            for item in mcp_res.content:
-                if hasattr(item, "text") and item.text:
-                    try:
-                        data = json.loads(item.text)
-                        if "searchUrl" in data:
-                            search_url = data["searchUrl"]
-                        if "searchResults" in data and isinstance(data["searchResults"], list):
-                            for r in data["searchResults"]:
-                                r_id = r.get("id", "")
-                                r_title = r.get("demandStayListing", {}).get("description") or r.get("title", "")
-                                r_url = r.get("url") or (f"https://www.airbnb.com/rooms/{r_id}" if r_id else search_url)
-                                if r_title:
-                                    mcp_listings.append({
-                                        "title": r_title,
-                                        "url": r_url,
-                                        "details": r.get("avgRatingA11yLabel", "Highly rated stay"),
-                                    })
-                    except Exception as parse_err:
-                        logger.debug(f"MCP payload parse note: {parse_err}")
-        except Exception as exc:
-            logger.warning(f"Live MCP stdio airbnb_search call failed: {exc}")
-
-    # 2. If MCP server returned parsed search listings
-    if mcp_listings:
-        lines = [f"🏨 Verified Airbnb MCP Listings for {loc_str}:\n"]
-        for idx, item in enumerate(mcp_listings[:5], 1):
-            title = item.get("title", f"Airbnb Stay {idx}")
-            url = item.get("url", search_url)
-            details = item.get("details", "")
-            lines.append(
-                f"{idx}. **{title}**\n"
-                f"   - Direct Booking Link: [Book on Airbnb]({url})\n"
-                f"   - Room URL: {url}\n"
-                f"   - Details: {details}\n"
-            )
-        return "\n".join(lines)
-
-    # 3. Format structured curated stay options using the MCP-generated geocoded URL
-    return (
-        f"🏨 Airbnb MCP Server Intelligence for '{query}' in {loc_str}:\n"
-        f"- Geocoded Destination URL: [View Verified Stays on Airbnb]({search_url})\n\n"
-        f"1. **Misty Mountain Heritage Villa & Cottage**\n"
-        f"   - Direct Booking Link: [Book on Airbnb]({search_url})\n"
-        f"   - Rating: 4.92/5 (184 reviews) | Price: $65/night | Accommodates: {adults} guests\n"
-        f"   - Highlights: Panoramic mountain view, heated indoor fireplace, high-speed WiFi, complimentary breakfast.\n"
-        f"   - Property Type: Entire Cottage / Villa\n\n"
-        f"2. **Cedar Pine Cozy Boutique Cottage**\n"
-        f"   - Direct Booking Link: [Book on Airbnb]({search_url})\n"
-        f"   - Rating: 4.88/5 (142 reviews) | Price: $48/night | Accommodates: {adults} guests\n"
-        f"   - Highlights: Private garden balcony, tea tasting set, wooden interior, dedicated workspace.\n"
-        f"   - Property Type: Entire Boutique Cottage\n\n"
-        f"3. **Skyline Sunrise Studio & Cottage**\n"
-        f"   - Direct Booking Link: [Book on Airbnb]({search_url})\n"
-        f"   - Rating: 4.95/5 (210 reviews) | Price: $85/night | Accommodates: {adults} guests\n"
-        f"   - Highlights: Glass studio, sunrise terrace, espresso machine, heating amenities.\n"
-        f"   - Property Type: Entire Studio Cottage"
-    )
-
-
-# Alias for backward compatibility
-fallback_airbnb_search = smart_airbnb_search
-
-
-from langchain_mcp_adapters.client import MultiServerMCPClient
 
 
 class MCPClientManager:

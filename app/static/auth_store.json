@@ -1,21 +1,21 @@
 {
   "users": {
     "elena.rostova@meddevices.eu": {
-      "id": "00070c44-116b-4d02-8734-94b30a433df5",
+      "id": "061927dc-47db-41b4-a634-58dda2a080dd",
       "email": "elena.rostova@meddevices.eu",
       "full_name": "Elena Rostova",
-      "hashed_password": "$argon2id$v=19$m=65536,t=3,p=4$jV+JU4Mm0jiwpaD60rdYog$0S/FIGFyqDNRGCrAa7bwInuM5jdAerBMaPB2Mfspw10",
+      "hashed_password": "$argon2id$v=19$m=65536,t=3,p=4$i/X4y3i2a1hoV2QYS5GHdg$nxtyJGq4TPMoc2HPETMMaTR87iGdQuDRx/x7Gq/AYjc",
       "is_active": true,
       "is_superuser": false,
       "role": "user",
-      "created_at": "2026-08-27 12:01:26.556178+00:00",
-      "updated_at": "2026-08-27 12:01:26.668989+00:00"
+      "created_at": "2026-08-27 12:18:23.941234+00:00",
+      "updated_at": "2026-08-27 12:18:24.071081+00:00"
     }
   },
   "reset_tokens": {
-    "753f858333850bda06575b6bd62a4dc430809c9f31d5a12fd9337d341f8afcc9": {
-      "user_id": "00070c44-116b-4d02-8734-94b30a433df5",
-      "expires_at": "2026-08-27 12:16:26.559095+00:00",
+    "b0e467e30177a41773935eca4656f6bd87a521c59a9452795ef16f9fe5d16036": {
+      "user_id": "061927dc-47db-41b4-a634-58dda2a080dd",
+      "expires_at": "2026-08-27 12:33:23.943857+00:00",
       "is_used": true
     }
   }

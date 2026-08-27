@@ -6,8 +6,8 @@ from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.main import app
-from app.core.mcp import MCPClientManager, fallback_airbnb_search
-from app.tools.weather import extract_weather, get_weather_forecast, weather_forecast_tool
+from app.core.mcp import MCPClientManager
+from app.tools.weather import extract_weather, weather_forecast_tool
 from app.graphs.mcp.builder import MCPTravelGraphBuilder, create_mcp_travel_graph
 
 
