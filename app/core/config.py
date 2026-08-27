@@ -48,17 +48,17 @@ class Settings(BaseSettings):
     LLM_MAX_RETRIES: int = 3
 
     # --- Per-Agent Token Limits (Token Budget Controls) ---
-    PLANNER_MAX_TOKENS: int = 800
-    APPROVER_MAX_TOKENS: int = 500
-    SYNTHESIZER_MAX_TOKENS: int = 1500
-    FACT_CRITIC_MAX_TOKENS: int = 600
-    STYLE_CRITIC_MAX_TOKENS: int = 600
-    PUBLISHER_MAX_TOKENS: int = 2500
-    GENERIC_CHAT_MAX_TOKENS: int = 1500
+    PLANNER_MAX_TOKENS: int = 1500
+    APPROVER_MAX_TOKENS: int = 800
+    SYNTHESIZER_MAX_TOKENS: int = 4096
+    FACT_CRITIC_MAX_TOKENS: int = 1200
+    STYLE_CRITIC_MAX_TOKENS: int = 1200
+    PUBLISHER_MAX_TOKENS: int = 8192
+    GENERIC_CHAT_MAX_TOKENS: int = 4096
 
     # --- Database Settings (PostgreSQL: agent_db) ---
     DATABASE_URL: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/agent_db",
+        default="postgresql://postgres:postgrespassword@localhost:5432/agent_db",
         description="PostgreSQL Database Connection URI for Agents and LangGraph",
     )
     DB_URI: str = Field(
@@ -72,7 +72,7 @@ class Settings(BaseSettings):
 
     # --- Authentication & JWT Settings (PostgreSQL: auth_db) ---
     AUTH_DATABASE_URL: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/auth_db",
+        default="postgresql://postgres:postgrespassword@localhost:5432/auth_db",
         description="PostgreSQL Connection URI for Authentication and Users (auth_db)",
     )
     AUTH_DB_POOL_MIN_SIZE: int = 2
@@ -100,9 +100,9 @@ class Settings(BaseSettings):
     AIRBNB_MCP_COMMAND: str = "npx"
     AIRBNB_MCP_ARGS: Union[List[str], str] = ["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
     WEATHER_API_KEY: str = Field(default="", description="WeatherAPI.com API Key")
-    AIRBNB_AGENT_MAX_TOKENS: int = 1500
-    WEATHER_AGENT_MAX_TOKENS: int = 1000
-    TOUR_AGENT_MAX_TOKENS: int = 2500
+    AIRBNB_AGENT_MAX_TOKENS: int = 4096
+    WEATHER_AGENT_MAX_TOKENS: int = 2048
+    TOUR_AGENT_MAX_TOKENS: int = 4096
 
     # --- Hybrid Retriever & Reranking ---
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-12-v2"

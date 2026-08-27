@@ -1,7 +1,9 @@
 """Authentication Database Management Module (PostgreSQL auth_db)."""
 
 import hashlib
+import json
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -22,6 +24,36 @@ class AuthDatabaseManager:
         self._in_memory_blacklist: set = set()
         self._in_memory_reset_tokens: Dict[str, Dict[str, Any]] = {}
         self._is_in_memory: bool = False
+        self._load_fallback()
+
+    def _get_fallback_file(self) -> str:
+        os.makedirs("app/static", exist_ok=True)
+        return "app/static/auth_store.json"
+
+    def _load_fallback(self) -> None:
+        """Loads persistent auth fallback accounts from disk."""
+        try:
+            path = self._get_fallback_file()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self._in_memory_users = data.get("users", {})
+                    self._in_memory_reset_tokens = data.get("reset_tokens", {})
+                    logger.info(f"Loaded {len(self._in_memory_users)} cached user accounts from fallback file.")
+        except Exception as e:
+            logger.warning(f"Could not load auth fallback file: {e}")
+
+    def _save_fallback(self) -> None:
+        """Persists auth accounts to disk."""
+        try:
+            path = self._get_fallback_file()
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "users": self._in_memory_users,
+                    "reset_tokens": self._in_memory_reset_tokens,
+                }, f, indent=2, default=str)
+        except Exception as e:
+            logger.warning(f"Could not save auth fallback file: {e}")
 
     async def initialize(self) -> None:
         """Initializes PostgreSQL connection pool and creates auth tables."""
@@ -50,13 +82,16 @@ class AuthDatabaseManager:
             # 2. Create Schema Tables
             await self._create_tables()
 
+            # 3. Sync any cached fallback accounts to PostgreSQL
+            await self._sync_fallback_to_postgres()
+
             self._is_in_memory = False
             logger.info("Auth Database (auth_db) initialized successfully.")
 
         except Exception as e:
             logger.warning(
                 f"Failed to connect to PostgreSQL auth_db: {e}. "
-                "Enabling In-Memory Auth Fallback for local testing."
+                "Enabling In-Memory Auth Fallback with disk persistence."
             )
             if self.pool:
                 try:
@@ -65,6 +100,34 @@ class AuthDatabaseManager:
                     pass
                 self.pool = None
             self._is_in_memory = True
+
+    async def _sync_fallback_to_postgres(self) -> None:
+        """Syncs cached users to PostgreSQL if any exist."""
+        if not self.pool or not self._in_memory_users:
+            return
+        try:
+            async with self.pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    for email, u in self._in_memory_users.items():
+                        await cur.execute(
+                            """
+                            INSERT INTO users (id, email, full_name, hashed_password, is_active, is_superuser, role)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (email) DO NOTHING
+                            """,
+                            (
+                                u.get("id", str(uuid.uuid4())),
+                                email,
+                                u.get("full_name", ""),
+                                u.get("hashed_password", ""),
+                                u.get("is_active", True),
+                                u.get("is_superuser", False),
+                                u.get("role", "user"),
+                            ),
+                        )
+            logger.info("Synced offline user accounts into PostgreSQL auth_db.")
+        except Exception as e:
+            logger.warning(f"Could not sync fallback users into PostgreSQL: {e}")
 
     async def _ensure_database_exists(self, auth_uri: str) -> None:
         """Connects to default postgres DB and creates auth_db if it does not exist."""
@@ -207,6 +270,7 @@ class AuthDatabaseManager:
                 "updated_at": now,
             }
             self._in_memory_users[email_normalized] = user_record
+            self._save_fallback()
             return user_record
 
         async with self.pool.connection() as conn:
@@ -232,6 +296,7 @@ class AuthDatabaseManager:
                 if u.get("id") == str(user_id):
                     u["hashed_password"] = new_hashed_password
                     u["updated_at"] = now
+                    self._save_fallback()
                     return True
             return False
 

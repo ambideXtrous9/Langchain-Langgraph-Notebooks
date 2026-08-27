@@ -4,6 +4,9 @@ import logging
 from typing import Any, Dict
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from langchain_mcp_adapters.tools import load_mcp_tools
 from app.core.config import settings
 from app.core.llm import get_llm
 from app.core.mcp import mcp_manager
@@ -13,123 +16,108 @@ from app.tools.weather import weather_forecast_tool
 
 logger = logging.getLogger(__name__)
 
-AIRBNB_AGENT_PROMPT = """You are an Airbnb & Accommodation Assistant.
+AIRBNB_AGENT_PROMPT = """You are an Airbnb Search Agent connected to the openbnb MCP server.
 
-- Use the available accommodation search tools to find stays matching the user query.
-- Generate an **ADVANCED HOTEL & AIRBNB REPORT** strictly following the markdown format below.
+When invoking the airbnb_search tool:
+- Extract and pass ONLY 'location' (e.g. 'Darjeeling, India') and 'adults' (e.g. 2).
+- DO NOT pass cursor or optional null parameters.
+
+**CRITICAL ACCURACY RULES:**
+- DO NOT hallucinate fake property names, dollar prices, or fake room numbers (like rooms/12345678).
+- If the tool returns parsed property IDs, display them with verified details.
+- If the tool returns a searchUrl, extract the direct geocoded URL from the MCP tool and prominently present it: `[Search Live Accommodations on Airbnb](<searchUrl>)`.
+- Give practical guidance on filters (Entire place, Scenic view, Superhost) and local price expectations.
 
 ## 🎯 Search Summary
-- **Location:** [location] | **Dates:** [checkin] → [checkout]
-- **Guests:** [adults]A, [children]C, [infants]I, [pets]P
-- **Room:** [room type] | **Stars:** [rating] | **Amenities:** [amenities]
-- **Results:** [number] hotels/stays
+- **Location:** [Location]
+- **Guests:** [adults] Adults
+- **Live Search Link:** [Explore Stays on Airbnb](<searchUrl>)
 
-## 🏨 Hotel & Airbnb Listings
-### [Property Name]
-| Detail | Info |
-|--------|------|
-| ⭐ Rating | [rating]/5 ([reviews]) |
-| 📍 Address | [full address] |
-| 💰 Rate | $[price]/night (+$[tax]) |
-| 🏠 Rooms | [categories] |
-| 📏 Distance | [city center] • [airport] |
-| 🔗 Booking | [URL] |
-| 📞 Contact | [phone] • [website] |
-
-**Amenities:** [pool/gym/spa, dining, transport, business, pets, WiFi, services]
-**Booking Policy:** Check-in, Check-out, Cancellation policy, Payment methods
-
-## 🏆 Final Picks
-- **Best Value:** [property + reason]
-- **Luxury:** [property + features]
-- **Budget:** [property + savings]
-- **Location:** [property + benefit]
-- **Amenities:** [property + standout]
+## 🏨 Accommodation Overview & Direct Search
+- **Geocoded Search Link:** [Search Live Accommodations on Airbnb](<searchUrl>)
+- **Search Parameters Applied:** Destination resolved with bounding coordinates and guest configuration.
+- **Booking Guidance:** Recommended neighborhoods, filters (e.g., heating, mountain view, Superhost), and tips for the destination.
 """
 
-WEATHER_AGENT_PROMPT = """You are a Weather Assistant.
+WEATHER_AGENT_PROMPT = """You are a Weather & Meteorology Assistant.
 
-- Use the **WeatherForecast tool** to fetch the forecast for the location mentioned in the query.
+- Extract the target travel destination from the query and immediately use the **WeatherForecast tool** to fetch the forecast.
 - Then generate a **Weather Report** strictly following the Markdown format below.
 - Do not add extra sections outside the format.
 
-## Weather Report for <Location> (Next <Days> Days)
+## Weather Report for <Location> (Next 3 Days)
 
-**Current Conditions:** <CurrentTemp>°C with <CurrentCondition> (<Rain/Heatwave/Clear/Other summary>)
+**Current Conditions:** <CurrentTemp>°C with <CurrentCondition>
 
 **Forecast Summary:**
-- **<Date 1>:** <Condition>, <MaxTemp>°C / <MinTemp>°C (<Rain/Heatwave/Clear/Other summary>)
-- **<Date 2>:** <Condition>, <MaxTemp>°C / <MinTemp>°C (<Rain/Heatwave/Clear/Other summary>)
-- **<Date 3>:** <Condition>, <MaxTemp>°C / <MinTemp>°C (<Rain/Heatwave/Clear/Other summary>)
+- **Day 1:** <Condition>, <MaxTemp>°C / <MinTemp>°C
+- **Day 2:** <Condition>, <MaxTemp>°C / <MinTemp>°C
+- **Day 3:** <Condition>, <MaxTemp>°C / <MinTemp>°C
 
 **Tour Recommendation:**
 Based on the weather forecast, state clearly if it is a good time to visit <Location>.
 Give practical advice: clothing, precautions, indoor/outdoor activity suggestions.
 """
 
-TOUR_AGENT_PROMPT = """You are a Master Travel & Tour Guide Assistant. Suggest a comprehensive tour and travel plan based on the user query and the Airbnb and Weather reports.
+TOUR_AGENT_PROMPT = """You are a Master Travel & Tour Guide Assistant. Synthesize a comprehensive travel plan based on the destination query, the Airbnb MCP report, and the Weather report.
 
-**Strictly follow the Markdown Output Format below.**
-
----
-
-## 🎯 Search Summary
-- **Location:** [location] | **Dates:** [checkin] → [checkout]
-- **Guests:** [adults]A, [children]C, [infants]I, [pets]P
-- **Results:** Stays and Weather Analyzed
+**CRITICAL ACCURACY & LINK RULES:**
+- DO NOT invent fake individual hotel names or non-existent room numbers (like rooms/12345678).
+- Extract and prominently display the real geocoded Airbnb search URL from the Airbnb report: `[Search Live Accommodations on Airbnb](<searchUrl>)`.
+- Synthesize the real meteorological forecast into tailored weather recommendations, packing tips, and day-by-day itineraries.
 
 ---
 
-## 🏨 Curated Stays & Accommodation
-[Synthesize the top Airbnb & Hotel options with pricing and amenities]
+## 🎯 Travel Summary
+- **Destination:** [Destination]
+- **Guests:** [Guests]
+- **Verified Airbnb Search:** [Search Live Accommodations on Airbnb](<searchUrl>)
 
 ---
 
-## 🏆 Final Recommended Picks
-- **Best Value:** [property + reason]
-- **Luxury:** [property + features]
-- **Budget:** [property + savings]
+## 🏨 Accommodation & Stay Strategy
+- **Direct Airbnb Filtered Search:** [Open Live Airbnb Search for <Destination>](<searchUrl>)
+- **Recommended Neighborhoods:** [Best areas for mountain views, tranquility, or central access]
+- **Key Filter Recommendations:** [Cottage/Entire Place, Heating, Scenic View, Superhost]
 
 ---
 
-## 🌤️ Weather Forecast & Stay Match
-- **Current Conditions & 3-Day Forecast**
-- **If Rainy/Cloudy:** Recommended cozy indoor stays and indoor attractions.
-- **If Sunny/Clear:** Recommended scenic viewpoint stays and outdoor tours.
-- **If Mixed Weather:** Balanced stays offering flexibility.
+## 🌤️ 3-Day Weather Forecast & Activity Plan
+- **Current Conditions:** [Current temperature and condition from weather report]
+- **Forecast Outlook:** [Day 1, Day 2, Day 3 summary]
+- **Weather Recommendation:** [Clothing and outdoor/indoor activity match]
 
 ---
 
-## 🧭 Travel Advisory & Precautions
-- **Clothing Advice:** [clothing recommendations]
-- **Safety & Packing:** [precautions]
-- **Recommended Activities:** [day-by-day highlights]
+## 🧭 Curated Itinerary & Travel Advisory
+- **Suggested Itinerary:** [Day 1, Day 2, Day 3 highlights]
+- **Clothing Advice:** [Recommended layers/footwear]
+- **Safety & Packing:** [Key essentials]
 
 ---
 
-### 🌟 Alternative Travel Note
-[Special local travel tip or alternative excursion]
+### 🌟 Local Insight & Travel Tip
+[Special local travel tip, dining gem, or scenic route]
 ---
 """
 
 
 async def airbnb_agent_node(state: MCPTravelState) -> Dict[str, Any]:
-    """Node that queries MCP Airbnb tools and formats an accommodation report."""
-    logger.info("Executing Airbnb Agent node with MCP tools...")
+    """Node that queries MCP tools via MultiServerMCPClient and formats an accommodation report."""
+    logger.info("Executing Airbnb Agent node with MultiServerMCPClient...")
     state_dict = await default_agent_pipeline.run_before_agent(dict(state))
     topic = state_dict.get("topic", "")
 
-    # Get Airbnb tools from MCP manager
-    tools = mcp_manager.get_server_tools("airbnb")
-
     llm = get_llm(max_tokens=settings.AIRBNB_AGENT_MAX_TOKENS)
-    agent = create_react_agent(
-        model=llm,
-        tools=tools,
-        prompt=AIRBNB_AGENT_PROMPT,
-    )
+    tools = await mcp_manager.get_tools()
 
     try:
+        agent = create_react_agent(
+            model=llm,
+            tools=tools,
+            prompt=AIRBNB_AGENT_PROMPT,
+        )
+
         response = await agent.ainvoke({"messages": [{"role": "user", "content": topic}]})
         ai_content = response["messages"][-1].content
     except Exception as exc:
@@ -145,6 +133,10 @@ async def airbnb_agent_node(state: MCPTravelState) -> Dict[str, Any]:
     }
 
 
+# Alias for direct invocation
+airbnbAgent = airbnb_agent_node
+
+
 async def weather_agent_node(state: MCPTravelState) -> Dict[str, Any]:
     """Node that queries the Weather tool and formats a meteorological report."""
     logger.info("Executing Weather Agent node...")
@@ -158,8 +150,14 @@ async def weather_agent_node(state: MCPTravelState) -> Dict[str, Any]:
         prompt=WEATHER_AGENT_PROMPT,
     )
 
+    weather_query = (
+        f"Travel Query: '{topic}'\n\n"
+        "Instructions: Extract the destination location (city/region) and fetch the 3-day weather forecast using the WeatherForecast tool. "
+        "Generate the complete weather report."
+    )
+
     try:
-        response = await agent.ainvoke({"messages": [{"role": "user", "content": topic}]})
+        response = await agent.ainvoke({"messages": [{"role": "user", "content": weather_query}]})
         ai_content = response["messages"][-1].content
     except Exception as exc:
         logger.error(f"Error in Weather Agent execution: {exc}")

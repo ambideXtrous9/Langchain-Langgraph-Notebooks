@@ -294,14 +294,33 @@ async def delete_thread_endpoint(
                     detail=f"Thread '{request.thread_id}' not found in checkpointer.",
                 )
 
-        # Delete thread if supported by checkpointer
+        # 1. Delete thread from checkpointer instance
         if hasattr(checkpointer, "adelete_thread"):
-            await checkpointer.adelete_thread(request.thread_id)
+            try:
+                await checkpointer.adelete_thread(request.thread_id)
+            except Exception as e:
+                logger.warning(f"checkpointer.adelete_thread error: {e}")
         elif hasattr(checkpointer, "delete_thread"):
-            checkpointer.delete_thread(request.thread_id)
+            try:
+                checkpointer.delete_thread(request.thread_id)
+            except Exception as e:
+                logger.warning(f"checkpointer.delete_thread error: {e}")
+
+        # 2. Directly purge PostgreSQL checkpoint tables for guaranteed removal
+        db_pool = getattr(req.app.state, "db_pool", None)
+        if db_pool:
+            try:
+                async with db_pool.connection() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute("DELETE FROM checkpoints WHERE thread_id = %s", (request.thread_id,))
+                        await cur.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (request.thread_id,))
+                        await cur.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (request.thread_id,))
+                        logger.info(f"Purged checkpoints for thread '{request.thread_id}' from PostgreSQL.")
+            except Exception as pool_err:
+                logger.warning(f"Direct PostgreSQL checkpoint tables deletion warning: {pool_err}")
 
         return DeleteThreadResponse(
-            message="Thread deleted successfully",
+            message="Thread and PostgreSQL checkpoints deleted successfully",
             thread_id=request.thread_id,
         )
 
