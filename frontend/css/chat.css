@@ -266,8 +266,9 @@
 
 /* Top Navbar */
 .chat-navbar {
-  height: 56px;
-  padding: 0 20px;
+  height: 52px;
+  min-height: 52px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -275,37 +276,171 @@
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--rule);
-  z-index: 20;
+  z-index: 50;
+  position: relative;
+  box-sizing: border-box;
 }
 
 .navbar-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 
 /* Agent Dropdown Switcher */
 .agent-dropdown-wrap {
   position: relative;
+  flex-shrink: 0;
 }
 
 .agent-dropdown-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 0 12px;
+  height: 34px;
   background: var(--paper);
   border: 1px solid var(--rule-2);
+  border-radius: var(--radius-sm);
   font-family: var(--display);
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--ink);
   cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.16s ease;
 }
 
 .agent-dropdown-btn:hover {
   border-color: var(--ink);
+  background: var(--bone-2);
+}
+
+.agent-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 320px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow-md);
+  padding: 6px;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 1000;
+}
+
+.agent-dropdown-menu.is-open {
+  display: flex;
+}
+
+.agent-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+
+.agent-option:hover {
+  background: var(--bone-2);
+}
+
+.agent-option.is-selected {
+  background: var(--brand-wash);
+  border-left: 3px solid var(--brand);
+}
+
+.agent-option-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.agent-option-desc {
+  font-size: 12px;
+  color: var(--slate);
+  line-height: 1.35;
+}
+
+/* Top Navbar MCP Mode Select Dropdown */
+.mcp-select-container {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  height: 34px;
+  background: var(--paper);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+  padding: 0 8px 0 10px;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.mcp-select-container:hover,
+.mcp-select-container:focus-within {
+  border-color: var(--brand);
+  background: var(--brand-wash);
+  box-shadow: 0 0 0 2px rgba(43, 68, 199, 0.15);
+}
+
+.mcp-select-icon {
+  font-size: 13px;
+  margin-right: 6px;
+  line-height: 1;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.mcp-native-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--brand-ink);
+  cursor: pointer;
+  padding: 0 18px 0 0;
+  height: 100%;
+  line-height: 32px;
+  white-space: nowrap;
+}
+
+.mcp-select-container::after {
+  content: "";
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--brand);
+  pointer-events: none;
+}
+
+.mcp-native-select option {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 8px 12px;
 }
 
 .agent-dropdown-menu {
@@ -425,15 +560,36 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  scroll-behavior: auto; /* prevents aggressive browser scroll bounce during rapid streaming */
+  scroll-behavior: auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Slim scrollbar to avoid layout asymmetry */
+.chat-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--rule-2);
+  border-radius: 3px;
+}
+
+.chat-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: var(--slate);
 }
 
 .chat-content-wrap {
   width: 100%;
-  max-width: 860px;
+  max-width: 1140px;
   display: flex;
   flex-direction: column;
   gap: 24px;
+  box-sizing: border-box;
 }
 
 /* Empty State / Welcome Screen */
@@ -444,7 +600,8 @@
   text-align: center;
   padding: 32px 20px 16px;
   margin: auto 0;
-  max-width: 720px;
+  max-width: 960px;
+  width: 100%;
 }
 
 .empty-state-badge {
@@ -527,58 +684,67 @@
    -------------------------------------------------------------------------- */
 .message-row {
   display: flex;
-  gap: 14px;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .message-row.user-row {
   justify-content: flex-end;
 }
 
-.message-avatar {
-  width: 32px;
-  height: 32px;
-  background: var(--ink);
-  color: var(--bone);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
+.message-row.assistant-row {
   justify-content: center;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  font-weight: 700;
-  flex: none;
-  margin-top: 2px;
-}
-
-.message-avatar.agent-avatar {
-  background: var(--brand);
-  color: #ffffff;
 }
 
 .message-body {
-  max-width: 84%;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 0; /* Prevents overflow blowup */
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .user-row .message-body {
-  max-width: 76%;
+  max-width: 80%;
+  width: auto;
+}
+
+.assistant-row .message-body {
+  width: 100%;
+  max-width: 100%;
 }
 
 .message-bubble {
-  padding: 14px 18px;
+  padding: 18px 22px;
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.62;
   min-height: 40px;
+  overflow-x: auto;
+  box-sizing: border-box;
 }
 
 .user-row .message-bubble {
   background: var(--ink);
   color: var(--bone);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.user-message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.user-tag {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--brand-wash);
 }
 
 .assistant-row .message-bubble {
@@ -586,23 +752,50 @@
   border: 1px solid var(--rule);
   color: var(--ink);
   box-shadow: var(--shadow-sm);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
+  width: 100%;
 }
 
 .message-agent-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--rule);
+}
+
+.message-agent-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.message-avatar-inline {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.message-avatar-inline svg {
+  width: 14px;
+  height: 14px;
 }
 
 .message-agent-tag {
   font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--brand);
 }
@@ -728,7 +921,8 @@
   font-size: 15px;
   line-height: 1.62;
   color: var(--ink);
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .prose p {
@@ -821,6 +1015,77 @@
   font-size: 13px;
 }
 
+/* Markdown Tables */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.4em 0;
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  table-layout: auto;
+}
+
+.prose table thead {
+  background: var(--bone-2);
+  border-bottom: 2px solid var(--rule-2);
+}
+
+.prose th {
+  padding: 11px 16px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border-right: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.prose th:last-child {
+  border-right: none;
+}
+
+.prose td {
+  padding: 12px 16px;
+  border-top: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  color: var(--ink);
+  vertical-align: top;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.prose td:last-child {
+  border-right: none;
+}
+
+.prose td:first-child,
+.prose th:first-child {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.prose td:nth-child(2),
+.prose th:nth-child(2) {
+  min-width: 170px;
+}
+
+.prose tr:nth-child(even) td {
+  background: #fafbfa;
+}
+
+.prose tr:hover td {
+  background: var(--brand-wash);
+}
+
 /* Stream Cursor */
 .stream-cursor {
   display: inline-block;
@@ -840,10 +1105,8 @@
    7. Bottom Floating Input Bar
    -------------------------------------------------------------------------- */
 .chat-input-wrapper {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  width: 100%;
+  flex-shrink: 0;
   padding: 14px 20px 18px;
   background: linear-gradient(to top, var(--bone) 80%, rgba(244, 245, 243, 0));
   display: flex;
@@ -854,7 +1117,7 @@
 
 .chat-input-box {
   width: 100%;
-  max-width: 860px;
+  max-width: 1140px;
   background: var(--paper);
   border: 1px solid var(--rule-2);
   box-shadow: var(--shadow-md);
@@ -862,6 +1125,7 @@
   display: flex;
   flex-direction: column;
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  box-sizing: border-box;
 }
 
 .chat-input-box:focus-within {

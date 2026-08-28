@@ -54,6 +54,28 @@ class MCPClientManager:
                     "args": args,
                 }
 
+            # 2. Pinecone MCP Server configuration
+            if settings.ENABLE_PINECONE_MCP:
+                pinecone_key = os.getenv("PINECONE_API_KEY") or settings.PINECONE_API_KEY
+                if pinecone_key:
+                    args = settings.PINECONE_MCP_ARGS
+                    if isinstance(args, str):
+                        import json
+                        try:
+                            args = json.loads(args)
+                        except Exception:
+                            args = [args]
+
+                    cmd = shutil.which(settings.PINECONE_MCP_COMMAND) or settings.PINECONE_MCP_COMMAND
+                    server_configs["pinecone"] = {
+                        "transport": "stdio",
+                        "command": cmd,
+                        "args": args,
+                        "env": {
+                            "PINECONE_API_KEY": pinecone_key,
+                        },
+                    }
+
             self._servers_config = server_configs
 
             if server_configs:

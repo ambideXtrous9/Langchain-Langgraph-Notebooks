@@ -137,7 +137,19 @@ graph TD;
 	classDef last fill:#bfb6fc
 ```
 
-#### C. Model Context Protocol (MCP) Multi-Agent Travel Graph (Parallel Fan-Out / Fan-In)
+##### C. Model Context Protocol (MCP) Multi-Agent Intelligence Graphs
+
+##### Mode 1: ⚡ Multi-Hop Harry Potter Lore QA Graph (`@pinecone-database/mcp`)
+```mermaid
+flowchart TD
+    Start([User Harry Potter Complex Question]) --> HPSearchAgent[1. hpSearchAgent\nMulti-Hop ReAct Agent\nPinecone MCP Index: hpvdb-openai\nTools: search-records, list-indexes,\ndescribe-index-stats, rerank-documents,\ncascading-search, search-docs]
+    HPSearchAgent -->|Multi-Hop Trace & Reranked Passages| HPLoreScholar[2. hpLoreScholar\nMaster Lore Scholar Synthesizer\nChronological Causal Chain Analysis]
+    HPLoreScholar --> EndNode([END])
+    
+    classDef default fill:#f2f0ff,line-height:1.2
+```
+
+##### Mode 2: 🏨 Airbnb Travel & Lodging Graph (`@openbnb/mcp-server-airbnb` + WeatherAPI)
 ```mermaid
 flowchart TD
     Start([User Travel Query]) --> AirbnbAgent[1. airbnbAgent\nReAct Agent with Airbnb MCP Tools]
@@ -156,8 +168,8 @@ flowchart TD
 
 ### 1. LangGraph StateGraph & Class-Based Nodes
 - **`AgentState` TypedDict**: Manages `tree`, `user_choices`, `current_path_str`, `user_decisions_str`, `context_docs_str`, `classification`, `feedback`, `useDeviceData`, `userProvidedDeiveceData`, and `chat_history` with the `add_messages` reducer.
-- **`MCPTravelState` TypedDict**: Manages `topic`, `knowledge` (`add_messages` reducer), `airbnb_report`, `weather_report`, and `summary`.
-- **Modular OOP Nodes**: Each node inherits from [BaseGraphNode](file:///home/sushovan/sushovan/STUDY/langgraph-project/app/graphs/nodes/base.py) providing standardized execution boundaries, error handling, and tracing.
+- **`MCPState` / `MCPTravelState` TypedDict**: Manages `topic`, `knowledge` (`add_messages` reducer), `hp_report` (HP QA), `airbnb_report`, `weather_report`, and `summary` (Airbnb mode).
+- **Modular OOP Nodes**: Each node inherits from standardized execution boundaries, error handling, and tracing.
 
 ### 2. PostgreSQL Checkpointing (`AsyncPostgresSaver`)
 - Persistent thread checkpoints stored asynchronously in PostgreSQL with `AsyncPostgresSaver(pool)`.
@@ -166,7 +178,7 @@ flowchart TD
 
 ### 3. Server-Sent Events (SSE) & WebSocket Streaming
 - **SSE Endpoint (`/interact`)**: Streams the generated `thread_id` first, then yields real-time token chunks using `graph.astream_events(..., version="v2")` filtered on `on_chat_model_stream` and `tags=["RegulatoryExpert"]`.
-- **SSE MCP Travel Endpoint (`/mcp/travel/stream`)**: Yields dynamic agent execution hints (`airbnbAgent`, `weatherAgent`, `tourAgent`) and streams raw token chunks tagged with `tags=["TourGuideExpert"]`.
+- **SSE MCP Endpoint (`/mcp/stream`)**: Yields dynamic agent execution hints (`hpSearchAgent`, `hpLoreScholar`, `airbnbAgent`, `weatherAgent`, `tourAgent`) and streams raw token chunks filtered by active sub-agent tag (`HPLoreScholar` or `TourGuideExpert`).
 - **WebSocket Endpoint (`/ws/interact`)**: Full-duplex bidirectional streaming supporting initial conversations and instant interrupt resume commands.
 
 ### 4. Human-in-the-Loop Interrupts & Resumes
@@ -175,7 +187,7 @@ flowchart TD
 
 ### 5. Model Context Protocol (MCP) Integration & Lifespan Architecture (`app/core/mcp.py`)
 
-#### A. Architecture & Lifespan Flow
+#### A. Multi-Server MCP Client Architecture
 ```
                                ┌─────────────────────────────────────────────────────────┐
                                │           FASTAPI APPLICATION LIFESPAN STARTUP          │
@@ -184,38 +196,35 @@ flowchart TD
                                                             ▼
                                ┌─────────────────────────────────────────────────────────┐
                                │            MCPClientManager.initialize()                │
-                               │  - Spawns stdio subprocess:                             │
-                               │    npx -y @openbnb/mcp-server-airbnb --ignore-robots-txt│
-                               │  - Opens ClientSession over stdio transport             │
-                               │  - Calls session.initialize() handshake                 │
-                               │  - load_mcp_tools(session) -> LangChain BaseTool list   │
-                               │  - Caches tools in app.state.mcp_manager                │
+                               │  - Spawns stdio subprocesses via MultiServerMCPClient:  │
+                               │    1) npx -y @openbnb/mcp-server-airbnb                │
+                               │    2) npx -y @pinecone-database/mcp (hpvdb-openai)      │
+                               │  - Discovers & caches tools in app.state.mcp_manager    │
                                └────────────────────────────┬────────────────────────────┘
                                                             │
-                               ┌────────────────────────────┴────────────────────────────┐
-                               │                                                         │
-                               ▼                                                         ▼
-            ┌──────────────────────────────────────┐                  ┌──────────────────────────────────────┐
-            │          airbnbAgent (Node)          │                  │          weatherAgent (Node)         │
-            │  - Bound with MCP discovered tools   │                  │  - Bound with WeatherForecast tool   │
-            │  - Invokes create_react_agent        │                  │  - WeatherAPI with Open-Meteo fallback│
-            └──────────────────┬───────────────────┘                  └──────────────────┬───────────────────┘
-                               │                                                         │
-                               └────────────────────────────┬────────────────────────────┘
-                                                            │ (Fan-In)
-                                                            ▼
-                               ┌─────────────────────────────────────────────────────────┐
-                               │             tourAgent Synthesis Node                    │
-                               │  - Merges Airbnb property listings & Weather forecast   │
-                               │  - Synthesizes customized travel advisory & stay match  │
-                               │  - Streams tokens tagged with ["TourGuideExpert"]       │
-                               └────────────────────────────┬────────────────────────────┘
+                            ┌───────────────────────────────┴───────────────────────────────┐
+                            │ Mode: "harry_potter"                                          │ Mode: "airbnb"
+                            ▼                                                               ▼
+             ┌─────────────────────────────┐                               ┌────────────────────────────────┐
+             │    hpSearchAgent (Node)     │                               │      airbnbAgent + weather     │
+             │  - Queries hpvdb-openai     │                               │  - Airbnb stdio MCP listings   │
+             │  - Retrieves canonical lore │                               │  - Live 3-day weather forecast │
+             └──────────────┬──────────────┘                               └───────────────┬────────────────┘
+                            │                                                              │
+                            ▼                                                              ▼
+             ┌─────────────────────────────┐                               ┌────────────────────────────────┐
+             │   hpLoreScholar Synthesis   │                               │    tourAgent Synthesizer       │
+             │  - Synthesizes answer       │                               │  - Pairs lodgings with weather │
+             │  - Tags: ["HPLoreScholar"]  │                               │  - Tags: ["TourGuideExpert"]   │
+             └──────────────┬──────────────┘                               └───────────────┬────────────────┘
+                            │                                                              │
+                            └───────────────────────────────┬───────────────────────────────┘
                                                             │
                                                             ▼
                                ┌─────────────────────────────────────────────────────────┐
                                │           FASTAPI APPLICATION LIFESPAN SHUTDOWN         │
                                │  - MCPClientManager.shutdown()                          │
-                               │  - Closes stdio sessions and terminates subprocesses    │
+                               │  - Terminates all active stdio subprocesses gracefully   │
                                └─────────────────────────────────────────────────────────┘
 ```
 
@@ -235,6 +244,65 @@ When selecting the integration method between the **`mcp.so` NPM/npx stdio subpr
 1. **Zero Privileged Sockets**: Spawning Docker containers from within a containerized FastAPI application requires mounting the host Docker socket (`/var/run/docker.sock`), which presents high security risks in production. Running `npx` in-process avoids this entirely.
 2. **Deterministic Lifecycle**: Process lifecycle is synchronously bound to FastAPI's `lifespan` context manager via `asyncio`.
 3. **Resilient Fallback**: If the external stdio MCP server is offline or fails network resolution, `MCPClientManager` automatically falls back to internal search adapters with zero service interruption.
+
+#### C. Multi-Hop Reasoning Protocol Architecture (`hpSearchAgent` & `hpLoreScholar`)
+
+The Harry Potter QA engine implements an advanced **Multi-Hop Reasoning ReAct Architecture** that traverses the 7-book corpus (`hpvdb-openai`) through iterative semantic retrieval hops:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          USER LORE QUESTION                                 │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🌲 STEP 1: Index Discovery & Namespace Introspection                        │
+│   - Tools: `list-indexes`, `describe-index`, `describe-index-stats`        │
+│   - Introspects index readiness, vector counts, and namespaces in hpvdb     │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🔗 STEP 2: Hop 1 — Core Entity & Origin Retrieval                          │
+│   - Tools: `search-records`, `pinecone_multihop_search`                    │
+│   - Queries foundational lore, origins, and first book appearances          │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🔗 STEP 3: Hop 2 — Causal Transition & Conflict Retrieval                  │
+│   - Tools: `search-records`, `cascading-search`                            │
+│   - Queries turning points, battles, transfers of ownership, or spells     │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🔗 STEP 4: Hop 3 — Climax, Canonical Resolution & Rules                    │
+│   - Tools: `search-records`, `rerank-documents` (`pinecone-rerank-v0`)     │
+│   - Cross-verifies final allegiance mechanics, Horcrux destruction, etc.   │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ⚡ STEP 5: Master Lore Scholar Synthesis (`hpLoreScholar`)                  │
+│   - Synthesizes the full chronological causal chain with book citations    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### Full Pinecone MCP Tool Suite Matrix:
+| Pinecone MCP Tool | Category | Role in Multi-Hop Reasoning |
+| :--- | :--- | :--- |
+| **`search-records`** | Retrieval | Semantic vector search on `hpvdb-openai` with integrated inference, metadata filters, and top-K sampling. |
+| **`rerank-documents`** | Reranking | Cross-encoder model (`cohere-rerank-3.5`, `pinecone-rerank-v0`, `bge-reranker-v2-m3`) re-scoring multi-hop candidates. |
+| **`cascading-search`** | Federation | Multi-index search across different vector namespaces with automatic deduplication. |
+| **`list-indexes`** | Introspection | Discovers and validates active Pinecone indexes in the project. |
+| **`describe-index`** | Schema | Inspects index embedding dimensions (1536), readiness status, and fieldMap. |
+| **`describe-index-stats`** | Analytics | Returns exact record count and namespace vector distribution in `hpvdb-openai`. |
+| **`search-docs`** | Documentation | Live documentation search for Pinecone query and filter syntax (`$eq`, `$in`, `$and`). |
+| **`create-index-for-model`** | Management | Creates integrated inference indexes dynamically. |
+| **`upsert-records`** | Ingestion | Inserts or updates lore records with integrated inference. |
+| **`pinecone_multihop_search`** | Native Fallback | Direct multi-hop sequential vector batch retriever across consecutive hops. |
+| **`pinecone_index_stats`** | Native Inspection | Real-time index health and namespace vector statistics. |
 
 ### 6. SQL Agent with SQLDatabaseToolkit
 - Natural language to SQL generation and execution using `create_sql_agent` with toolkits, returning synthesized explanations, the exact SQL query, and raw tabular results.
@@ -378,13 +446,13 @@ langgraph-project/
 | `POST` | `/research/stream` | **SSE token & dynamic hint streaming** from Publisher | `{"topic": "..."}`, `Bearer <token>` |
 | `GET` | `/research/mermaid` | Live Mermaid diagram of compiled parallel graph | None |
 
-### 3. Model Context Protocol (MCP) Multi-Agent Travel Pipeline
+### 3. Model Context Protocol (MCP) Multi-Agent Intelligence Pipeline
 | Method | Path | Description | Key Request Params / Auth |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/mcp/tools` | List registered MCP servers, connection status & discovered tools | Bearer Token (`Authorization: Bearer <token>`) |
-| `POST` | `/mcp/travel/run` | Synchronous execution of concurrent Airbnb MCP & Weather agents | `{"topic": "..."}`, `Bearer <token>` |
-| `POST` | `/mcp/travel/stream` | **SSE streaming** with live agent hints and Tour Guide tokens | `{"topic": "..."}`, `Bearer <token>` |
-| `GET` | `/mcp/travel/mermaid` | Mermaid flowchart definition of compiled MCP graph | None |
+| `POST` | `/mcp/run` | Synchronous execution of MCP subgraphs (`harry_potter` or `airbnb`) | `{"topic": "...", "mode": "harry_potter" \| "airbnb"}`, `Bearer <token>` |
+| `POST` | `/mcp/stream` | **SSE streaming** with live agent hints and sub-agent token chunks | `{"topic": "...", "mode": "harry_potter" \| "airbnb"}`, `Bearer <token>` |
+| `GET` | `/mcp/mermaid` | Mermaid flowchart definition of compiled sub-graph (`?mode=harry_potter` or `?mode=airbnb`) | None |
 
 ### 4. Stateful Regulatory Decision-Tree (`agent_db`)
 | Method | Path | Description | Key Request Params / Auth |
@@ -431,10 +499,16 @@ cp .env.example .env
 | `ENABLE_AIRBNB_MCP` | Enable Airbnb Stdio MCP server | `True` |
 | `AIRBNB_MCP_COMMAND` | Subprocess executable command | `npx` |
 | `AIRBNB_MCP_ARGS` | Arguments passed to MCP server | `["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]` |
+| `ENABLE_PINECONE_MCP` | Enable Pinecone Stdio MCP server | `True` |
+| `PINECONE_API_KEY` | Pinecone API key for serverless vector retrieval | `""` |
+| `PINECONE_INDEX_NAME` | Pinecone index name holding Harry Potter corpus | `hpvdb-openai` |
+| `QDRANT_ENDPOINT` | Source Qdrant vector database URL (for migration script) | `""` |
+| `QDRANT_API_KEY` | Source Qdrant API key | `""` |
 | `WEATHER_API_KEY` | WeatherAPI.com API key (Open-Meteo fallback if empty) | `""` |
-| `AIRBNB_AGENT_MAX_TOKENS` | Token ceiling for Airbnb MCP agent | `1500` |
-| `WEATHER_AGENT_MAX_TOKENS` | Token ceiling for Weather agent | `1000` |
-| `TOUR_AGENT_MAX_TOKENS` | Token ceiling for Tour Guide agent | `2500` |
+| `AIRBNB_AGENT_MAX_TOKENS` | Token ceiling for Airbnb MCP agent | `4096` |
+| `HP_AGENT_MAX_TOKENS` | Token ceiling for Harry Potter Lore Scholar | `4096` |
+| `WEATHER_AGENT_MAX_TOKENS` | Token ceiling for Weather agent | `2048` |
+| `TOUR_AGENT_MAX_TOKENS` | Token ceiling for Tour Guide agent | `4096` |
 | `LANGFUSE_ENABLED` | Enable Langfuse tracing | `False` |
 | `CORS_ORIGINS` | Allowed CORS origins (JSON array or comma-separated) | `["*"]` |
 
@@ -528,15 +602,29 @@ curl -N -X POST http://localhost:8000/research/stream \
   -d '{"topic": "Future of robotic laparoscopic surgery and FDA safety alerts"}'
 ```
 
-### 3. Test MCP Travel & Accommodation SSE Stream (`/mcp/travel/stream`)
+### 3. Test Multi-Hop MCP Lore QA SSE Stream (`/mcp/stream` with `harry_potter`)
 ```bash
-curl -N -X POST http://localhost:8000/mcp/travel/stream \
+curl -N -X POST http://localhost:8000/mcp/stream \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <your_jwt_access_token>" \
-  -d '{"topic": "Find me the top 5 Airbnb in Darjeeling for next 3 days within 8000 for 2 people"}'
+  -d '{
+    "topic": "Explain how the Elder Wand allegiance passed to Harry Potter and list all 7 Horcruxes",
+    "mode": "harry_potter"
+  }'
 ```
 
-### 4. Test WebSocket Streaming (`/ws/interact`)
+### 4. Test Airbnb Travel & Weather SSE Stream (`/mcp/stream` with `airbnb`)
+```bash
+curl -N -X POST http://localhost:8000/mcp/stream \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_jwt_access_token>" \
+  -d '{
+    "topic": "Find 3 cozy cottages near Glenfinnan Viaduct under $150/night for next weekend",
+    "mode": "airbnb"
+  }'
+```
+
+### 5. Test WebSocket Streaming (`/ws/interact`)
 Run the WebSocket test script:
 ```bash
 python scripts/test_ws_client.py

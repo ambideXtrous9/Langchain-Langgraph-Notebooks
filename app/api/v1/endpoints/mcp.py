@@ -1,15 +1,22 @@
-"""FastAPI Endpoints for MCP Tool Discovery, Parallel Multi-Agent Travel Graph, and SSE Streaming."""
+"""FastAPI Endpoints for MCP Tool Discovery, Harry Potter QA, Airbnb Travel Graph, and SSE Streaming."""
 
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict
+from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from app.api.deps import get_current_active_user
 from app.core.mcp import mcp_manager
-from app.graphs.mcp.builder import MCPTravelGraphBuilder, create_mcp_travel_graph
+from app.graphs.mcp.builder import (
+    MCPTravelGraphBuilder,
+    create_airbnb_graph,
+    create_hp_graph,
+    create_mcp_travel_graph,
+)
 from app.schemas.auth import UserResponse
 from app.schemas.mcp import (
+    MCPRequest,
+    MCPResponse,
     MCPToolsListResponse,
     MCPTravelRequest,
     MCPTravelResponse,
@@ -20,11 +27,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/mcp", tags=["Model Context Protocol (MCP)"])
 
 
+# ==============================================================================
+# 1. MCP Tools Registry Discovery
+# ==============================================================================
+
 @router.get(
     "/tools",
     response_model=MCPToolsListResponse,
-    summary="List Registered MCP Servers & Tools",
-    description="Returns active MCP servers, connection statuses, and all discovered tools.",
+    summary="List Registered MCP Servers & Discovered Tools",
+    description="Returns connected MCP stdio servers, status health, and discovered tools.",
 )
 async def list_mcp_tools(
     current_user: UserResponse = Depends(get_current_active_user),
@@ -39,167 +50,202 @@ async def list_mcp_tools(
     )
 
 
-@router.post(
-    "/travel/run",
-    response_model=MCPTravelResponse,
-    summary="Run MCP Multi-Agent Travel Pipeline (Synchronous)",
-    description="Executes concurrent Airbnb & Weather agents and synthesizes a full travel & accommodation guide.",
-)
-async def run_mcp_travel(
-    payload: MCPTravelRequest,
-    current_user: UserResponse = Depends(get_current_active_user),
-) -> MCPTravelResponse:
-    """Executes the multi-agent travel graph synchronously."""
-    logger.info(f"User '{current_user.email}' requested MCP travel run for: '{payload.topic[:60]}'")
+# ==============================================================================
+# 2. Dedicated SSE Streaming Generators (Completely Decoupled)
+# ==============================================================================
+
+async def _stream_harry_potter_qa(topic: str) -> AsyncGenerator[str, None]:
+    """Dedicated SSE generator for Harry Potter Universe QA via Pinecone MCP."""
+    graph = create_hp_graph()
+    initial_state = {
+        "topic": topic,
+        "mode": "harry_potter",
+        "knowledge": [],
+        "hp_report": "",
+        "summary": "",
+    }
+
+    yield f"data: {json.dumps({'event': 'hint', 'agent': 'dispatcher', 'data': f'Initiating Harry Potter Universe Question Answering for: {topic[:50]}...'})}\n\n"
+
+    seen_start = set()
+    seen_end = set()
+    tokens_streamed = False
+
     try:
-        graph = create_mcp_travel_graph()
-        initial_state = {
-            "topic": payload.topic,
-            "knowledge": [],
-            "airbnb_report": "",
-            "weather_report": "",
-            "summary": "",
-        }
+        async for event in graph.astream_events(initial_state, version="v2"):
+            event_type = event.get("event")
+            metadata = event.get("metadata", {})
+            node_name = metadata.get("langgraph_node", "")
+            tags = event.get("tags", [])
 
-        result = await graph.ainvoke(initial_state)
+            # Node Start Events
+            if event_type in ["on_chain_start", "on_chat_model_start"] and node_name in ["hpSearchAgent", "hpLoreScholar"] and node_name not in seen_start:
+                seen_start.add(node_name)
+                if node_name == "hpSearchAgent":
+                    hint = f"Harry Potter Vector Retrieval Agent: Querying 'hpvdb-openai' Pinecone index for: '{topic[:45]}...'"
+                else:
+                    hint = "Master Harry Potter Lore Scholar: Synthesizing retrieved book records into canonical answer..."
+                yield f"data: {json.dumps({'event': 'hint', 'agent': node_name, 'data': hint})}\n\n"
 
-        return MCPTravelResponse(
-            topic=payload.topic,
-            airbnb_report=result.get("airbnb_report", ""),
-            weather_report=result.get("weather_report", ""),
-            final_plan=result.get("summary", ""),
-            servers_used=["airbnb", "weather"],
-        )
+            # Pinecone Tool Events
+            elif event_type == "on_tool_start":
+                tool_name = event.get("name", "pinecone_tool")
+                tool_hint = f"Pinecone MCP Tool [{tool_name}]: Searching Harry Potter vector records in 'hpvdb-openai'..."
+                yield f"data: {json.dumps({'event': 'tool_start', 'tool': tool_name, 'data': tool_hint})}\n\n"
+
+            elif event_type == "on_tool_end":
+                tool_name = event.get("name", "pinecone_tool")
+                tool_hint = f"Pinecone MCP Tool [{tool_name}]: Retrieved matching book passages & metadata."
+                yield f"data: {json.dumps({'event': 'tool_end', 'tool': tool_name, 'data': tool_hint})}\n\n"
+
+            # Node End Events
+            elif event_type == "on_chain_end" and node_name in ["hpSearchAgent", "hpLoreScholar"] and node_name not in seen_end:
+                seen_end.add(node_name)
+                if node_name == "hpSearchAgent":
+                    hint = "Harry Potter Vector Retrieval Agent: Book passages retrieved and verified."
+                else:
+                    hint = "Master Harry Potter Lore Scholar: Finalized canonical answer."
+                    output = event.get("data", {}).get("output") or {}
+                    if isinstance(output, dict) and "summary" in output:
+                        final_summary = output["summary"]
+                yield f"data: {json.dumps({'event': 'hint', 'agent': node_name, 'data': hint})}\n\n"
+
+            # Token Streaming from Scholar
+            elif event_type == "on_chat_model_stream" and "HPLoreScholar" in tags:
+                chunk = event.get("data", {}).get("chunk")
+                if chunk and hasattr(chunk, "content") and chunk.content:
+                    token_text = chunk.content
+                    if isinstance(token_text, list):
+                        token_text = "".join([p.get("text", "") if isinstance(p, dict) else str(p) for p in token_text])
+                    if token_text:
+                        tokens_streamed = True
+                        yield f"data: {json.dumps({'event': 'token', 'agent': 'hpLoreScholar', 'data': token_text})}\n\n"
+
+        if not tokens_streamed and 'final_summary' in locals() and final_summary:
+            yield f"data: {json.dumps({'event': 'token', 'agent': 'hpLoreScholar', 'data': final_summary})}\n\n"
+
+        yield f"data: {json.dumps({'event': 'done', 'data': 'Harry Potter Universe answer synthesized successfully.'})}\n\n"
+
     except Exception as exc:
-        logger.error(f"Error in run_mcp_travel: {exc}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"MCP Travel execution failed: {str(exc)}",
-        )
+        logger.error(f"Error streaming Harry Potter QA: {exc}", exc_info=True)
+        yield f"data: {json.dumps({'event': 'error', 'data': str(exc)})}\n\n"
 
+
+async def _stream_airbnb_search(topic: str) -> AsyncGenerator[str, None]:
+    """Dedicated SSE generator for Airbnb Accommodation & Weather search via OpenBNB MCP."""
+    graph = create_airbnb_graph()
+    initial_state = {
+        "topic": topic,
+        "mode": "airbnb",
+        "knowledge": [],
+        "airbnb_report": "",
+        "weather_report": "",
+        "summary": "",
+    }
+
+    yield f"data: {json.dumps({'event': 'hint', 'agent': 'dispatcher', 'data': f'Initiating Airbnb Accommodation & Weather Search for: {topic[:50]}...'})}\n\n"
+
+    seen_start = set()
+    seen_end = set()
+    tokens_streamed = False
+
+    try:
+        async for event in graph.astream_events(initial_state, version="v2"):
+            event_type = event.get("event")
+            metadata = event.get("metadata", {})
+            node_name = metadata.get("langgraph_node", "")
+            tags = event.get("tags", [])
+
+            # Node Start Events
+            if event_type in ["on_chain_start", "on_chat_model_start"] and node_name in ["airbnbAgent", "weatherAgent", "tourAgent"] and node_name not in seen_start:
+                seen_start.add(node_name)
+                if node_name == "airbnbAgent":
+                    hint = f"Airbnb Agent: Searching properties and accommodations for: '{topic[:45]}...'"
+                elif node_name == "weatherAgent":
+                    hint = f"Weather Agent: Analyzing meteorological conditions for: '{topic[:45]}...'"
+                else:
+                    hint = "Master Tour Guide: Synthesizing lodging options & weather outlook into itinerary..."
+                yield f"data: {json.dumps({'event': 'hint', 'agent': node_name, 'data': hint})}\n\n"
+
+            # Tool Events
+            elif event_type == "on_tool_start":
+                tool_name = event.get("name", "mcp_tool")
+                tool_input = event.get("data", {}).get("input") or {}
+                if "airbnb" in tool_name.lower() or "listing" in tool_name.lower():
+                    loc = tool_input.get("location") or tool_input.get("query") or topic[:30]
+                    tool_hint = f"Airbnb MCP Tool: Querying property catalog in '{loc}'..."
+                elif "weather" in tool_name.lower():
+                    loc = tool_input.get("location") or tool_input.get("query") or topic[:30]
+                    tool_hint = f"Weather Tool: Fetching 3-day forecast for '{loc}'..."
+                else:
+                    tool_hint = f"Tool [{tool_name}]: Executing lookup..."
+                yield f"data: {json.dumps({'event': 'tool_start', 'tool': tool_name, 'data': tool_hint})}\n\n"
+
+            elif event_type == "on_tool_end":
+                tool_name = event.get("name", "mcp_tool")
+                tool_hint = f"Tool [{tool_name}]: Retrieved structured travel data."
+                yield f"data: {json.dumps({'event': 'tool_end', 'tool': tool_name, 'data': tool_hint})}\n\n"
+
+            # Node End Events
+            elif event_type == "on_chain_end" and node_name in ["airbnbAgent", "weatherAgent", "tourAgent"] and node_name not in seen_end:
+                seen_end.add(node_name)
+                if node_name == "airbnbAgent":
+                    hint = "Airbnb Agent: Curated top property options and stay pricing."
+                elif node_name == "weatherAgent":
+                    hint = "Weather Agent: Prepared climate advisories and temperature summary."
+                else:
+                    hint = "Master Tour Guide Expert: Finalized travel plan and accommodation guide."
+                    output = event.get("data", {}).get("output") or {}
+                    if isinstance(output, dict) and "summary" in output:
+                        final_summary = output["summary"]
+                yield f"data: {json.dumps({'event': 'hint', 'agent': node_name, 'data': hint})}\n\n"
+
+            # Token Streaming from Tour Guide
+            elif event_type == "on_chat_model_stream" and "TourGuideExpert" in tags:
+                chunk = event.get("data", {}).get("chunk")
+                if chunk and hasattr(chunk, "content") and chunk.content:
+                    token_text = chunk.content
+                    if isinstance(token_text, list):
+                        token_text = "".join([p.get("text", "") if isinstance(p, dict) else str(p) for p in token_text])
+                    if token_text:
+                        tokens_streamed = True
+                        yield f"data: {json.dumps({'event': 'token', 'agent': 'tourAgent', 'data': token_text})}\n\n"
+
+        if not tokens_streamed and 'final_summary' in locals() and final_summary:
+            yield f"data: {json.dumps({'event': 'token', 'agent': 'tourAgent', 'data': final_summary})}\n\n"
+
+        yield f"data: {json.dumps({'event': 'done', 'data': 'Travel & accommodation guide ready.'})}\n\n"
+
+    except Exception as exc:
+        logger.error(f"Error streaming Airbnb search: {exc}", exc_info=True)
+        yield f"data: {json.dumps({'event': 'error', 'data': str(exc)})}\n\n"
+
+
+# ==============================================================================
+# 3. Synchronous & Streaming Endpoints
+# ==============================================================================
 
 @router.post(
-    "/travel/stream",
-    summary="Stream MCP Travel Pipeline with Live Hints and Token Generation",
-    description="Streams real-time agent progress hints and final tour guide token generation via SSE.",
+    "/stream",
+    summary="Stream MCP Pipeline with Live SSE Events",
+    description="Streams real-time agent hints and token generation for either Harry Potter QA or Airbnb Search.",
 )
-async def stream_mcp_travel(
-    payload: MCPTravelRequest,
+@router.post("/travel/stream", include_in_schema=False)
+async def stream_mcp(
+    payload: MCPRequest,
     current_user: UserResponse = Depends(get_current_active_user),
 ) -> StreamingResponse:
-    """Streams live multi-agent execution events and token chunks."""
-    logger.info(f"User '{current_user.email}' streaming MCP travel for: '{payload.topic[:60]}'")
+    """Dispatches to the dedicated SSE stream based on mode ('harry_potter' vs 'airbnb')."""
+    mode = payload.mode if payload.mode in ["harry_potter", "airbnb"] else "harry_potter"
+    logger.info(f"User '{current_user.email}' streaming MCP pipeline [mode={mode}] for: '{payload.topic[:60]}'")
 
-    async def event_generator() -> AsyncGenerator[str, None]:
-        graph = create_mcp_travel_graph()
-        topic = payload.topic
-        initial_state = {
-            "topic": topic,
-            "knowledge": [],
-            "airbnb_report": "",
-            "weather_report": "",
-            "summary": "",
-        }
-
-        # 1. Initial kickoff event specialized to user query
-        yield f"data: {json.dumps({'event': 'hint', 'agent': 'dispatcher', 'data': f'Initiating concurrent MCP travel intelligence for: {topic[:50]}...'})}\n\n"
-
-        seen_start_nodes = set()
-        seen_end_nodes = set()
-        seen_tools = set()
-        tokens_streamed = False
-
-        try:
-            async for event in graph.astream_events(initial_state, version="v2"):
-                event_type = event.get("event")
-                metadata = event.get("metadata", {})
-                node_name = metadata.get("langgraph_node", "")
-                tags = event.get("tags", [])
-
-                # 2a. Dynamic Node Start Hints specialized to user topic
-                if event_type in ["on_chain_start", "on_chat_model_start"] and node_name in ["airbnbAgent", "weatherAgent", "tourAgent"] and node_name not in seen_start_nodes:
-                    seen_start_nodes.add(node_name)
-                    if node_name == "airbnbAgent":
-                        hint = f"Airbnb Agent: Analyzing accommodation criteria and searching available listings for '{topic[:45]}...'"
-                    elif node_name == "weatherAgent":
-                        hint = f"Weather Agent: Analyzing atmospheric conditions and climate forecast for '{topic[:45]}...'"
-                    elif node_name == "tourAgent":
-                        hint = f"Tour Guide Expert: Cross-referencing accommodation amenities with weather outlook to assemble final itinerary for '{topic[:45]}...'"
-                    else:
-                        hint = f"Executing Agent: {node_name} for '{topic[:40]}...'"
-
-                    yield f"data: {json.dumps({'event': 'hint', 'agent': node_name, 'data': hint})}\n\n"
-
-                # 2b. Dynamic Tool Execution Start Hints (specialized with tool arguments)
-                elif event_type == "on_tool_start":
-                    tool_name = event.get("name", "tool")
-                    tool_input = event.get("data", {}).get("input") or {}
-                    tool_call_id = event.get("run_id", tool_name)
-
-                    if tool_call_id not in seen_tools:
-                        seen_tools.add(tool_call_id)
-                        if "weather" in tool_name.lower():
-                            location = tool_input.get("location") or tool_input.get("query") or topic[:30]
-                            days = tool_input.get("days", 3)
-                            tool_hint = f"Weather Tool: Fetching meteorological forecast for '{location}' ({days} days)..."
-                        elif "airbnb" in tool_name.lower() or "listing" in tool_name.lower():
-                            loc = tool_input.get("location") or tool_input.get("query") or topic[:30]
-                            adults = tool_input.get("adults", 2)
-                            tool_hint = f"Airbnb MCP Tool: Querying property catalog in '{loc}' for {adults} guests..."
-                        else:
-                            input_preview = str(tool_input)[:40]
-                            tool_hint = f"Tool [{tool_name}]: Executing specialized lookup with params ({input_preview})..."
-
-                        yield f"data: {json.dumps({'event': 'tool_start', 'tool': tool_name, 'data': tool_hint})}\n\n"
-
-                # 2c. Dynamic Tool Completion Hints
-                elif event_type == "on_tool_end":
-                    tool_name = event.get("name", "tool")
-                    tool_hint = f"Tool [{tool_name}]: Retrieved structured intelligence for '{topic[:35]}...'"
-                    yield f"data: {json.dumps({'event': 'tool_end', 'tool': tool_name, 'data': tool_hint})}\n\n"
-
-                # 2d. Dynamic Node Completion Hints
-                elif event_type == "on_chain_end" and node_name in ["airbnbAgent", "weatherAgent", "tourAgent"] and node_name not in seen_end_nodes:
-                    seen_end_nodes.add(node_name)
-                    if node_name == "airbnbAgent":
-                        hint = f"Airbnb Agent: Curated top property options and stay pricing for '{topic[:40]}...'"
-                    elif node_name == "weatherAgent":
-                        hint = f"Weather Agent: Prepared climate advisories and temperature summary for '{topic[:40]}...'"
-                    elif node_name == "tourAgent":
-                        hint = f"Tour Guide Expert: Finalized travel plan and recommendations for '{topic[:40]}...'"
-                        output = event.get("data", {}).get("output") or {}
-                        if isinstance(output, dict) and "summary" in output:
-                            final_summary = output["summary"]
-                    else:
-                        hint = f"Completed Agent: {node_name} for '{topic[:40]}...'"
-
-                    yield f"data: {json.dumps({'event': 'hint', 'agent': node_name, 'data': hint})}\n\n"
-
-                # 3. Token streaming ONLY from the final Tour Guide Expert synthesis node
-                elif event_type == "on_chat_model_stream" and "TourGuideExpert" in tags:
-                    chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content") and chunk.content:
-                        token_text = chunk.content
-                        if isinstance(token_text, list):
-                            token_text = "".join(
-                                [p.get("text", "") if isinstance(p, dict) else str(p) for p in token_text]
-                            )
-                        if token_text:
-                            tokens_streamed = True
-                            yield f"data: {json.dumps({'event': 'token', 'agent': 'tourAgent', 'data': token_text})}\n\n"
-
-            # 4. Fallback if tokens were not streamed in real-time
-            if not tokens_streamed and 'final_summary' in locals() and final_summary:
-                yield f"data: {json.dumps({'event': 'token', 'agent': 'tourAgent', 'data': final_summary})}\n\n"
-
-            # 5. Final done event
-            yield f"data: {json.dumps({'event': 'done', 'data': f'Travel planning and accommodation intelligence complete for {topic[:40]}...'})}\n\n"
-        except Exception as exc:
-            logger.error(f"Error streaming MCP travel: {exc}", exc_info=True)
-            yield f"data: {json.dumps({'event': 'error', 'data': str(exc)})}\n\n"
+    if mode == "harry_potter":
+        generator = _stream_harry_potter_qa(payload.topic)
+    else:
+        generator = _stream_airbnb_search(payload.topic)
 
     return StreamingResponse(
-        event_generator(),
+        generator,
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -209,13 +255,84 @@ async def stream_mcp_travel(
     )
 
 
-@router.get(
-    "/travel/mermaid",
-    response_class=PlainTextResponse,
-    summary="Get MCP Travel Graph Mermaid Flowchart",
-    description="Returns Mermaid diagram definition for the parallel MCP multi-agent workflow.",
+# Backwards compatibility alias
+stream_mcp_travel = stream_mcp
+
+
+@router.post(
+    "/run",
+    response_model=MCPResponse,
+    summary="Run MCP Pipeline Synchronously",
+    description="Executes either Harry Potter Universe QA or Airbnb Search synchronously.",
 )
-async def get_mcp_mermaid():
-    """Returns Mermaid diagram definition of the compiled MCP travel graph."""
+@router.post("/travel/run", response_model=MCPResponse, include_in_schema=False)
+async def run_mcp(
+    payload: MCPRequest,
+    current_user: UserResponse = Depends(get_current_active_user),
+) -> MCPResponse:
+    """Executes the selected MCP workflow synchronously."""
+    mode = payload.mode if payload.mode in ["harry_potter", "airbnb"] else "harry_potter"
+    logger.info(f"User '{current_user.email}' requested MCP run [mode={mode}] for: '{payload.topic[:60]}'")
+
+    try:
+        if mode == "harry_potter":
+            graph = create_hp_graph()
+            initial_state = {
+                "topic": payload.topic,
+                "mode": "harry_potter",
+                "knowledge": [],
+                "hp_report": "",
+                "summary": "",
+            }
+            result = await graph.ainvoke(initial_state)
+            return MCPResponse(
+                topic=payload.topic,
+                mode="harry_potter",
+                final_plan=result.get("summary", ""),
+                hp_report=result.get("hp_report", ""),
+                servers_used=["pinecone"],
+            )
+        else:
+            graph = create_airbnb_graph()
+            initial_state = {
+                "topic": payload.topic,
+                "mode": "airbnb",
+                "knowledge": [],
+                "airbnb_report": "",
+                "weather_report": "",
+                "summary": "",
+            }
+            result = await graph.ainvoke(initial_state)
+            return MCPResponse(
+                topic=payload.topic,
+                mode="airbnb",
+                final_plan=result.get("summary", ""),
+                airbnb_report=result.get("airbnb_report", ""),
+                weather_report=result.get("weather_report", ""),
+                servers_used=["airbnb", "weather"],
+            )
+    except Exception as exc:
+        logger.error(f"Error in run_mcp: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"MCP execution failed: {str(exc)}",
+        )
+
+
+# Backwards compatibility alias
+run_mcp_travel = run_mcp
+
+
+@router.get(
+    "/mermaid",
+    response_class=PlainTextResponse,
+    summary="Get MCP Graph Mermaid Flowchart",
+    description="Returns Mermaid diagram definition for the specified MCP mode ('harry_potter' or 'airbnb').",
+)
+@router.get("/travel/mermaid", response_class=PlainTextResponse, include_in_schema=False)
+async def get_mcp_mermaid(mode: str = "harry_potter"):
+    """Returns Mermaid diagram definition for the selected mode."""
+    mode_clean = mode if mode in ["harry_potter", "airbnb"] else "harry_potter"
     builder = MCPTravelGraphBuilder()
-    return builder.get_mermaid_graph()
+    return builder.get_mermaid_graph(mode=mode_clean)
+

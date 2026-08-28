@@ -101,7 +101,10 @@ class TopologyController {
 
     let endpoint = CONFIG.ENDPOINTS.GRAPH_MERMAID;
     if (type === "research") endpoint = CONFIG.ENDPOINTS.RESEARCH_MERMAID;
-    if (type === "mcp") endpoint = CONFIG.ENDPOINTS.MCP_MERMAID;
+    if (type === "mcp") {
+      const mode = localStorage.getItem("rp360_mcp_mode") || "harry_potter";
+      endpoint = `${CONFIG.ENDPOINTS.MCP_MERMAID}?mode=${mode}`;
+    }
 
     try {
       const dsl = await api.request(endpoint, { includeAuth: false });
