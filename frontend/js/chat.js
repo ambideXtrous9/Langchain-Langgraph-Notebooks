@@ -160,6 +160,62 @@ class ChatPlatformController {
     this.renderActiveAgentUI();
   }
 
+  switchMCPMode(targetMode) {
+    if (!AGENTS.mcp || !AGENTS.mcp.modes || !AGENTS.mcp.modes[targetMode]) return;
+
+    AGENTS.mcp.activeMode = targetMode;
+    localStorage.setItem("rp360_mcp_mode", targetMode);
+
+    const cfg = AGENTS.mcp.currentModeConfig;
+
+    // 1. Update text input with new mode default prompt & placeholder
+    const textarea = document.getElementById("chat-input-textarea");
+    const sendBtn = document.getElementById("chat-send-trigger");
+    if (textarea) {
+      textarea.value = cfg.defaultPrompt;
+      textarea.placeholder = cfg.inputPlaceholder;
+      textarea.style.height = "auto";
+      textarea.style.height = Math.min(160, textarea.scrollHeight) + "px";
+      if (sendBtn) sendBtn.disabled = false;
+    }
+
+    // 2. Update navbar select dropdown
+    const badgeEl = document.getElementById("active-agent-badge");
+    if (badgeEl && this.activeAgentId === "mcp") {
+      badgeEl.textContent = "MCP";
+    }
+
+    const selectEl = document.getElementById("mcp-mode-select");
+    const iconEl = document.getElementById("mcp-select-icon");
+
+    if (selectEl) selectEl.value = targetMode;
+    if (iconEl) iconEl.textContent = targetMode === "harry_potter" ? "⚡" : "🏨";
+
+    // 3. Re-render empty state / suggestion cards if session has no messages
+    const session = this.getActiveSession();
+    if (!session || session.messages.length === 0) {
+      this.renderEmptyState();
+    }
+
+    // 4. Re-render parameter bar chips
+    this.renderParamChips(AGENTS.mcp);
+
+    // 5. Update flowchart drawer if currently open
+    const drawer = document.getElementById("flowchart-drawer");
+    if (drawer && drawer.classList.contains("is-open")) {
+      this.openFlowchartDrawer();
+    }
+
+    window.dispatchEvent(new CustomEvent("rp360:notify", {
+      detail: {
+        message: targetMode === "harry_potter"
+          ? "Switched to Harry Potter Universe QA (Pinecone MCP)"
+          : "Switched to Airbnb Travel & Lodging Search (OpenBNB MCP)",
+        type: "success"
+      }
+    }));
+  }
+
   renderActiveAgentUI() {
     const agent = AGENTS[this.activeAgentId] || AGENTS.regulatory;
 
@@ -167,10 +223,25 @@ class ChatPlatformController {
     const nameEl = document.getElementById("active-agent-name");
     const badgeEl = document.getElementById("active-agent-badge");
     const iconEl = document.getElementById("active-agent-icon");
+    const mcpDropdown = document.getElementById("navbar-mcp-dropdown");
 
     if (nameEl) nameEl.textContent = agent.name;
-    if (badgeEl) badgeEl.innerHTML = agent.badge;
     if (iconEl) iconEl.innerHTML = agent.icon;
+
+    if (this.activeAgentId === "mcp") {
+      const mode = agent.activeMode || "harry_potter";
+      if (badgeEl) badgeEl.textContent = "MCP";
+      if (mcpDropdown) {
+        mcpDropdown.style.display = "inline-flex";
+        const selectEl = document.getElementById("mcp-mode-select");
+        const iconEl = document.getElementById("mcp-select-icon");
+        if (selectEl) selectEl.value = mode;
+        if (iconEl) iconEl.textContent = mode === "harry_potter" ? "⚡" : "🏨";
+      }
+    } else {
+      if (badgeEl) badgeEl.innerHTML = agent.badge;
+      if (mcpDropdown) mcpDropdown.style.display = "none";
+    }
 
     // Sidebar items active state
     document.querySelectorAll(".agent-nav-item").forEach(item => {
@@ -192,10 +263,17 @@ class ChatPlatformController {
       }
     });
 
-    // Update Textarea Placeholder dynamically per Agent
+    // Update Textarea Placeholder & Default Prompt dynamically per Agent
     const textarea = document.getElementById("chat-input-textarea");
+    const sendBtn = document.getElementById("chat-send-trigger");
     if (textarea) {
       textarea.placeholder = agent.inputPlaceholder || "Ask a question or enter a prompt...";
+      if (agent.defaultPrompt && (!textarea.value.trim() || Object.values(AGENTS).some(a => a.defaultPrompt === textarea.value.trim() || (a.modes && Object.values(a.modes).some(m => m.defaultPrompt === textarea.value.trim()))))) {
+        textarea.value = agent.defaultPrompt;
+        textarea.style.height = "auto";
+        textarea.style.height = Math.min(160, textarea.scrollHeight) + "px";
+        if (sendBtn) sendBtn.disabled = false;
+      }
     }
 
     // Update parameter chips in bottom bar
@@ -230,10 +308,12 @@ class ChatPlatformController {
         <span class="param-pill is-active">Live DuckDuckGo</span>
       `;
     } else if (agent.id === "mcp") {
+      const activeMode = agent.activeMode || "harry_potter";
+      const cfg = agent.currentModeConfig || (agent.modes ? agent.modes[activeMode] : null);
+      const pills = (cfg && cfg.pills) ? cfg.pills : ["Pinecone MCP", "OpenBNB MCP"];
       container.style.display = "flex";
       container.innerHTML = `
-        <span class="param-pill is-active">@openbnb/mcp-server-airbnb (stdio)</span>
-        <span class="param-pill is-active">WeatherAPI ReAct</span>
+        ${pills.map(p => `<span class="param-pill is-active">${p}</span>`).join("")}
       `;
     } else if (agent.id === "sql") {
       container.style.display = "flex";
@@ -304,10 +384,13 @@ class ChatPlatformController {
           <div class="message-row user-row">
             <div class="message-body">
               <div class="message-bubble">
+                <div class="user-message-header">
+                  <span class="user-tag">YOU</span>
+                  <span class="mono" style="font-size: 10px; color: rgba(244, 245, 243, 0.6);">${msg.timestamp || ''}</span>
+                </div>
                 <div class="prose" style="color: var(--bone);">${this.formatContent(msg.content)}</div>
               </div>
             </div>
-            <div class="message-avatar">YOU</div>
           </div>
         `;
       } else {
@@ -318,11 +401,13 @@ class ChatPlatformController {
 
         html += `
           <div class="message-row assistant-row" id="msg-row-${idx}">
-            <div class="message-avatar agent-avatar">${agent.icon}</div>
             <div class="message-body">
               <div class="message-bubble">
                 <div class="message-agent-header">
-                  <span class="message-agent-tag">${agent.name}</span>
+                  <div class="message-agent-identity">
+                    <span class="message-avatar-inline agent-avatar">${agent.icon}</span>
+                    <span class="message-agent-tag">${agent.name}</span>
+                  </div>
                   <span class="mono" style="font-size: 10px; color: var(--slate);">${msg.timestamp || ''}</span>
                 </div>
 
@@ -359,6 +444,42 @@ class ChatPlatformController {
     if (!container) return;
 
     const agent = AGENTS[this.activeAgentId] || AGENTS.regulatory;
+
+    if (this.activeAgentId === "mcp") {
+      const cfg = agent.currentModeConfig;
+
+      container.innerHTML = `
+        <div class="empty-state">
+          <span class="empty-state-badge">${cfg.badge}</span>
+          <h2 class="empty-state-title">${cfg.label}</h2>
+          <p class="empty-state-desc">${cfg.description}</p>
+
+          <div class="prompt-grid">
+            ${cfg.suggestions.map((s, idx) => `
+              <div class="prompt-card" data-prompt-index="${idx}">
+                <div class="prompt-card-title">
+                  <span>${s.title}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </div>
+                <p class="prompt-card-desc">${s.desc}</p>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+
+      // Bind suggestion cards click
+      container.querySelectorAll(".prompt-card").forEach(card => {
+        card.addEventListener("click", () => {
+          const idx = parseInt(card.getAttribute("data-prompt-index"));
+          const suggestion = cfg.suggestions[idx];
+          if (suggestion) {
+            this.sendMessage(suggestion.prompt);
+          }
+        });
+      });
+      return;
+    }
 
     container.innerHTML = `
       <div class="empty-state">
@@ -551,6 +672,15 @@ class ChatPlatformController {
           this.setAgent(aId);
           dropdownMenu.classList.remove("is-open");
         });
+      });
+    }
+
+    // Top Navbar MCP Mode Dropdown Selector
+    // Top Navbar MCP Mode Select Dropdown
+    const mcpSelect = document.getElementById("mcp-mode-select");
+    if (mcpSelect) {
+      mcpSelect.addEventListener("change", (e) => {
+        this.switchMCPMode(e.target.value);
       });
     }
 
@@ -891,8 +1021,9 @@ class ChatPlatformController {
     this.abortController = new AbortController();
     const session = this.getActiveSession();
     const msg = session.messages[msgIdx];
+    const mode = AGENTS.mcp.activeMode || "harry_potter";
 
-    await api.streamSSE(CONFIG.ENDPOINTS.MCP_TRAVEL_STREAM, { topic }, {
+    await api.streamSSE(CONFIG.ENDPOINTS.MCP_TRAVEL_STREAM, { topic, mode }, {
       signal: this.abortController.signal,
       onEvent: (data) => {
         if (data.event === "hint" && data.data) {
@@ -1074,17 +1205,41 @@ class ChatPlatformController {
     if (!drawer || !container) return;
 
     const agent = AGENTS[this.activeAgentId] || AGENTS.regulatory;
-    if (title) title.textContent = `${agent.name} Flowchart`;
+    const mode = this.activeAgentId === "mcp" ? (AGENTS.mcp.activeMode || "harry_potter") : "";
+    const modeSuffix = mode === "harry_potter" ? " · Harry Potter QA" : (mode === "airbnb" ? " · Airbnb Search" : "");
+    if (title) title.textContent = `${agent.name}${modeSuffix} Flowchart`;
 
     drawer.classList.add("is-open");
     container.innerHTML = '<div class="mono" style="color: var(--slate); padding: 24px;"><span class="spin">⟳</span> Rendering compiled StateGraph...</div>';
 
-    let endpoint = CONFIG.ENDPOINTS.GRAPH_MERMAID;
-    if (this.activeAgentId === "research") endpoint = CONFIG.ENDPOINTS.RESEARCH_MERMAID;
-    if (this.activeAgentId === "mcp") endpoint = CONFIG.ENDPOINTS.MCP_MERMAID;
+    let dsl = "";
 
     try {
-      const dsl = await api.request(endpoint, { includeAuth: false });
+      if (this.activeAgentId === "regulatory") {
+        dsl = await api.request(CONFIG.ENDPOINTS.GRAPH_MERMAID, { includeAuth: false });
+      } else if (this.activeAgentId === "research") {
+        dsl = await api.request(CONFIG.ENDPOINTS.RESEARCH_MERMAID, { includeAuth: false });
+      } else if (this.activeAgentId === "mcp") {
+        dsl = await api.request(`${CONFIG.ENDPOINTS.MCP_MERMAID}?mode=${mode}`, { includeAuth: false });
+      } else if (this.activeAgentId === "sql") {
+        dsl = `flowchart TD
+    Start([User Natural Language Query]) --> SQLAgent[1. create_sql_agent\\nSQLDatabaseToolkit Orchestrator]
+    SQLAgent --> ListTables[2. sql_db_list_tables\\nSchema Introspection & Table Discovery]
+    ListTables --> QueryChecker[3. sql_db_query_checker\\nSyntax Validation & Dialect Correction]
+    QueryChecker --> ExecuteSQL[4. sql_db_query\\nSafe Read-Only PostgreSQL Execution]
+    ExecuteSQL --> Synthesizer[5. Tabular Data & Explanation Synthesizer]
+    Synthesizer --> EndNode([Synthesized Explanation & Interactive Data Table])
+    classDef default fill:#f2f0ff,line-height:1.2`;
+      } else if (this.activeAgentId === "chat") {
+        dsl = `flowchart TD
+    Start([User Message + Session ID]) --> FetchHistory[1. PostgresChatMessageHistory\\nThread Checkpoint & Session Memory Retrieval]
+    FetchHistory --> ContextAssembler[2. Context & History Assembler\\nTrim & Token Budget Window]
+    ContextAssembler --> ChatLLM[3. ChatGroq Inference\\nStateful Conversational Generation]
+    ChatLLM --> AppendHistory[4. Append Message & Update Postgres Checkpoint]
+    AppendHistory --> EndNode([Streaming Response & Memory Persisted])
+    classDef default fill:#f2f0ff,line-height:1.2`;
+      }
+
       if (window.mermaid && dsl) {
         const id = `drawer-mermaid-${Date.now()}`;
         const { svg } = await window.mermaid.render(id, dsl);

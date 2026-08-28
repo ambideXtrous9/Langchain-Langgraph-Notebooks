@@ -43,8 +43,11 @@ export const CONFIG = {
     
     // Model Context Protocol (MCP)
     MCP_TOOLS: "/mcp/tools",
-    MCP_TRAVEL_RUN: "/mcp/travel/run",
-    MCP_TRAVEL_STREAM: "/mcp/travel/stream",
+    MCP_RUN: "/mcp/run",
+    MCP_STREAM: "/mcp/stream",
+    MCP_MERMAID: "/mcp/mermaid",
+    MCP_TRAVEL_RUN: "/mcp/run",
+    MCP_TRAVEL_STREAM: "/mcp/stream",
     
     // Text-to-SQL
     SQL_QUERY: "/get_sql_query",

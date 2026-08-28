@@ -89,38 +89,99 @@ export const AGENTS = {
   mcp: {
     id: "mcp",
     name: "MCP Multi-Agent Intelligence",
-    badge: "MCP &middot; stdio",
+    badge: "MCP &middot; Dual Engine",
     icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`,
-    description: "Subprocess Model Context Protocol (MCP) manager coordinating Airbnb property tools and Weather ReAct agents concurrently, synthesized into custom travel guides.",
+    description: "Multi-Server Model Context Protocol (MCP) manager. Toggle between Harry Potter Universe Question Answering (Pinecone MCP) and Airbnb Travel Search (OpenBNB MCP + Weather).",
     color: "#117864",
-    endpoint: "/mcp/travel/stream",
-    syncEndpoint: "/mcp/travel/run",
+    endpoint: "/mcp/stream",
+    syncEndpoint: "/mcp/run",
     supportsHITL: false,
-    inputPlaceholder: "Search accommodations & destination (e.g. Top 3 cottages in Darjeeling with mountain view)...",
-    defaultPrompt: "Find top 3 cottages in Darjeeling for 2 people with mountain view",
-    params: {},
-    suggestions: [
-      {
-        title: "Darjeeling Mountain Cottages",
-        desc: "Find top 3 stays for 2 guests with mountain views & weather.",
-        prompt: "Find top 3 cottages in Darjeeling for 2 people with mountain view"
+    activeMode: localStorage.getItem("rp360_mcp_mode") || "harry_potter",
+    modes: {
+      harry_potter: {
+        id: "harry_potter",
+        label: "⚡ Harry Potter QA",
+        badge: "Multi-Hop Pinecone MCP · hpvdb-openai",
+        description: "Multi-Hop Reasoning agent querying the Pinecone vector database across the 7-book corpus using the full Pinecone MCP tool suite (search-records, describe-index-stats, rerank-documents, cascading-search).",
+        inputPlaceholder: "Ask anything about the Harry Potter universe (e.g. Explain the allegiance history of the Elder Wand)...",
+        defaultPrompt: "Explain the history of the Elder Wand and how its allegiance transferred across the series based on the books",
+        pills: [
+          "Multi-Hop Reasoning (3-Hops)",
+          "@pinecone-database/mcp (hpvdb-openai)",
+          "Vector Reranking",
+          "HP Lore Scholar"
+        ],
+        suggestions: [
+          {
+            title: "Elder Wand Allegiance",
+            desc: "Explore wandlore rules and how ownership passed from Dumbledore to Harry.",
+            prompt: "Explain the history of the Elder Wand and how its allegiance transferred across the series based on the books"
+          },
+          {
+            title: "The Triwizard Third Task",
+            desc: "Retrieve book details on the maze creatures, sphinx riddle, and portkey cup.",
+            prompt: "What happened during the third task of the Triwizard Tournament in the maze in Goblet of Fire?"
+          },
+          {
+            title: "Voldemort's 7 Horcruxes",
+            desc: "Chronicle every Horcrux, its vessel, history, location, and destruction.",
+            prompt: "List all 7 Horcruxes created by Voldemort, their historical significance, and how each was destroyed"
+          },
+          {
+            title: "Secret of the Marauder's Map",
+            desc: "How Moony, Wormtail, Padfoot, and Prongs created the enchanted map.",
+            prompt: "Explain the creation of the Marauder's Map and how Remus Lupin and Sirius Black used it at Hogwarts"
+          }
+        ]
       },
-      {
-        title: "Goa Beachfront Villa",
-        desc: "Weekend stay for 4 adults with pool & weather outlook.",
-        prompt: "Weekend beach villa in North Goa for 4 guests with pool"
-      },
-      {
-        title: "Manali Valley Chalet",
-        desc: "Cozy stay near Solang Valley with heating & climate advisories.",
-        prompt: "Cozy chalet in Manali near Solang Valley for 2 adults"
-      },
-      {
-        title: "Kyoto Traditional Apartment",
-        desc: "Quiet stay near Gion with weather summary.",
-        prompt: "Quiet apartment in Kyoto near Gion for 2 travelers"
+      airbnb: {
+        id: "airbnb",
+        label: "🏨 Airbnb Search",
+        badge: "Airbnb MCP · OpenBNB",
+        description: "Subprocess MCP agent searching live Airbnb properties, cottages, and villas synthesized with 3-day weather forecasts.",
+        inputPlaceholder: "Search accommodations & destination (e.g. Find top 3 cottages in Darjeeling with mountain view)...",
+        defaultPrompt: "Find top 3 cottages in Darjeeling for 2 people with mountain view",
+        pills: [
+          "@openbnb/mcp-server-airbnb (stdio)",
+          "WeatherAPI ReAct",
+          "Live Geocoding"
+        ],
+        suggestions: [
+          {
+            title: "Darjeeling Mountain Cottages",
+            desc: "Find top 3 stays for 2 guests with mountain views & weather.",
+            prompt: "Find top 3 cottages in Darjeeling for 2 people with mountain view"
+          },
+          {
+            title: "Goa Beachfront Villa",
+            desc: "Weekend stay for 4 adults with pool & weather outlook.",
+            prompt: "Weekend beach villa in North Goa for 4 guests with pool"
+          },
+          {
+            title: "Manali Valley Chalet",
+            desc: "Cozy stay near Solang Valley with heating & climate advisories.",
+            prompt: "Cozy chalet in Manali near Solang Valley for 2 adults"
+          },
+          {
+            title: "Kyoto Traditional Apartment",
+            desc: "Quiet stay near Gion with weather summary.",
+            prompt: "Quiet apartment in Kyoto near Gion for 2 travelers"
+          }
+        ]
       }
-    ]
+    },
+    get currentModeConfig() {
+      return this.modes[this.activeMode] || this.modes.harry_potter;
+    },
+    get suggestions() {
+      return this.currentModeConfig.suggestions;
+    },
+    get inputPlaceholder() {
+      return this.currentModeConfig.inputPlaceholder;
+    },
+    get defaultPrompt() {
+      return this.currentModeConfig.defaultPrompt;
+    }
   },
 
   sql: {

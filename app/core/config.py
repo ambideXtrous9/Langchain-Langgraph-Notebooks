@@ -99,8 +99,13 @@ class Settings(BaseSettings):
     ENABLE_AIRBNB_MCP: bool = True
     AIRBNB_MCP_COMMAND: str = "npx"
     AIRBNB_MCP_ARGS: Union[List[str], str] = ["-y", "@openbnb/mcp-server-airbnb", "--ignore-robots-txt"]
+    ENABLE_PINECONE_MCP: bool = True
+    PINECONE_API_KEY: str = Field(default="", description="Pinecone API Key")
+    PINECONE_MCP_COMMAND: str = "npx"
+    PINECONE_MCP_ARGS: Union[List[str], str] = ["-y", "@pinecone-database/mcp"]
     WEATHER_API_KEY: str = Field(default="", description="WeatherAPI.com API Key")
     AIRBNB_AGENT_MAX_TOKENS: int = 4096
+    HP_AGENT_MAX_TOKENS: int = 4096
     WEATHER_AGENT_MAX_TOKENS: int = 2048
     TOUR_AGENT_MAX_TOKENS: int = 4096
 

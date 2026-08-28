@@ -125,7 +125,7 @@ class MCPController {
   }
 
   resetAllAgents() {
-    ["airbnbAgent", "weatherAgent", "tourAgent"].forEach(a => this.setAgentState(a, "idle"));
+    ["hpSearchAgent", "hpLoreScholar", "airbnbAgent", "weatherAgent", "tourAgent"].forEach(a => this.setAgentState(a, "idle"));
   }
 
   resetConsole() {
@@ -133,7 +133,7 @@ class MCPController {
     const consoleBody = document.getElementById("mcp-console-body");
     const guideBox = document.getElementById("mcp-guide-box");
     if (consoleBody) consoleBody.innerHTML = '<span class="mono" style="color: #6e7681;">[Awaiting MCP multi-agent kickoff...]</span>';
-    if (guideBox) guideBox.innerHTML = '<p class="mono" style="color: var(--slate);">Tour Guide synthesized recommendations and Airbnb listings will stream here...</p>';
+    if (guideBox) guideBox.innerHTML = '<p class="mono" style="color: var(--slate);">Tour Guide synthesized recommendations, Airbnb listings, and Pinecone vector intelligence will stream here...</p>';
     this.resetAllAgents();
   }
 
@@ -174,7 +174,7 @@ class MCPController {
 
     if (!topic) {
       window.dispatchEvent(new CustomEvent("rp360:notify", {
-        detail: { message: "Please enter accommodation criteria & destination.", type: "error" }
+        detail: { message: "Please enter query criteria & destination.", type: "error" }
       }));
       return;
     }
@@ -201,9 +201,11 @@ class MCPController {
 
   async runStreamingTravel(topic) {
     this.abortController = new AbortController();
-    this.appendConsoleLog(`Dispatching concurrent Airbnb & Weather agents for: "${topic}"...`, "info");
+    const mode = localStorage.getItem("rp360_mcp_mode") || "harry_potter";
+    const modeDesc = mode === "harry_potter" ? "Harry Potter Universe QA (Pinecone MCP)" : "Airbnb Lodging Search (OpenBNB MCP)";
+    this.appendConsoleLog(`Dispatching MCP pipeline [${modeDesc}] for: "${topic}"...`, "info");
 
-    await api.streamSSE(CONFIG.ENDPOINTS.MCP_TRAVEL_STREAM, { topic }, {
+    await api.streamSSE(CONFIG.ENDPOINTS.MCP_TRAVEL_STREAM, { topic, mode }, {
       signal: this.abortController.signal,
       onEvent: (data) => {
         if (data.agent) {
@@ -211,7 +213,7 @@ class MCPController {
             this.setAgentState(data.agent, "running");
             this.appendConsoleLog(data.data || `Agent [${data.agent}]: Processing...`, "info");
           } else if (data.event === "token") {
-            this.setAgentState("tourAgent", "running");
+            this.setAgentState(data.agent || "tourAgent", "running");
             this.appendToken(data.data || "");
           }
         }
@@ -223,8 +225,8 @@ class MCPController {
         }
 
         if (data.event === "done") {
-          ["airbnbAgent", "weatherAgent", "tourAgent"].forEach(a => this.setAgentState(a, "completed"));
-          this.appendConsoleLog(data.data || "Travel planning complete.", "success");
+          ["hpSearchAgent", "hpLoreScholar", "airbnbAgent", "weatherAgent", "tourAgent"].forEach(a => this.setAgentState(a, "completed"));
+          this.appendConsoleLog(data.data || "MCP execution complete.", "success");
         }
 
         if (data.event === "error" || data.error) {
@@ -238,7 +240,7 @@ class MCPController {
       onDone: () => {
         this.onStreamCompleted();
         window.dispatchEvent(new CustomEvent("rp360:notify", {
-          detail: { message: "MCP accommodation & weather synthesis ready.", type: "success" }
+          detail: { message: "MCP multi-agent response ready.", type: "success" }
         }));
       },
       onError: (err) => {
@@ -249,26 +251,27 @@ class MCPController {
   }
 
   async runSynchronousTravel(topic) {
-    this.appendConsoleLog(`Executing synchronous multi-agent travel graph for: "${topic}"...`, "info");
+    const mode = localStorage.getItem("rp360_mcp_mode") || "harry_potter";
+    this.appendConsoleLog(`Executing synchronous MCP graph [mode=${mode}] for: "${topic}"...`, "info");
 
     try {
       const response = await api.request(CONFIG.ENDPOINTS.MCP_TRAVEL_RUN, {
         method: "POST",
-        body: { topic },
+        body: { topic, mode },
       });
 
       const finalPlan = response.final_plan || response.summary || "No travel plan generated.";
       this.appendToken(finalPlan);
-      this.appendConsoleLog("Multi-agent travel synthesis complete.", "success");
-      ["airbnbAgent", "weatherAgent", "tourAgent"].forEach(a => this.setAgentState(a, "completed"));
+      this.appendConsoleLog("MCP multi-agent synthesis complete.", "success");
+      ["hpSearchAgent", "hpLoreScholar", "airbnbAgent", "weatherAgent", "tourAgent"].forEach(a => this.setAgentState(a, "completed"));
 
       window.dispatchEvent(new CustomEvent("rp360:notify", {
-        detail: { message: "Travel guide generated successfully.", type: "success" }
+        detail: { message: "MCP response generated successfully.", type: "success" }
       }));
     } catch (err) {
       this.appendConsoleLog(`Execution failed: ${err.message}`, "tool");
       window.dispatchEvent(new CustomEvent("rp360:notify", {
-        detail: { message: `MCP travel failed: ${err.message}`, type: "error" }
+        detail: { message: `MCP execution failed: ${err.message}`, type: "error" }
       }));
     } finally {
       this.onStreamCompleted();

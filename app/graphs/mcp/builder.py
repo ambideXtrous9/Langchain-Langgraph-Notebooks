@@ -1,59 +1,121 @@
-"""Graph Builder for MCP Travel and Intelligence StateGraph."""
+"""Graph Builder for MCP Harry Potter Universe QA and Airbnb Multi-Agent StateGraphs."""
 
 import logging
+import os
 from typing import Optional
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from app.graphs.mcp.nodes import airbnb_agent_node, tour_guide_node, weather_agent_node
+from app.graphs.mcp.nodes import (
+    airbnb_agent_node,
+    hp_lore_scholar_node,
+    hp_search_node,
+    tour_guide_node,
+    weather_agent_node,
+)
 from app.schemas.mcp import MCPTravelState
 
 logger = logging.getLogger(__name__)
 
 
 class MCPTravelGraphBuilder:
-    """Builder class for the MCP-integrated multi-agent travel state graph."""
+    """Builder class for MCP multi-agent state graphs (supports 'harry_potter' and 'airbnb' modes)."""
 
     def __init__(self, checkpointer: Optional[BaseCheckpointSaver] = None) -> None:
         self.checkpointer = checkpointer
 
-    def build_graph(self) -> CompiledStateGraph:
-        """Constructs and compiles the concurrent fan-out / fan-in MCP travel graph."""
-        logger.info("Assembling MCP Travel Multi-Agent Graph...")
+    def build_hp_graph(self) -> CompiledStateGraph:
+        """Constructs and compiles the Harry Potter Universe QA graph via Pinecone MCP."""
+        logger.info("Assembling MCP Harry Potter Universe QA Graph...")
         builder = StateGraph(MCPTravelState)
 
-        # 1. Add Graph Nodes
+        # 1. Add Nodes
+        builder.add_node("hpSearchAgent", hp_search_node)
+        builder.add_node("hpLoreScholar", hp_lore_scholar_node)
+
+        # 2. Sequential pipeline: START -> hpSearchAgent -> hpLoreScholar -> END
+        builder.add_edge(START, "hpSearchAgent")
+        builder.add_edge("hpSearchAgent", "hpLoreScholar")
+        builder.add_edge("hpLoreScholar", END)
+
+        if self.checkpointer:
+            return builder.compile(checkpointer=self.checkpointer)
+        return builder.compile()
+
+    def build_airbnb_graph(self) -> CompiledStateGraph:
+        """Constructs and compiles the Airbnb Accommodations & Weather fan-out / fan-in graph."""
+        logger.info("Assembling MCP Airbnb Travel Multi-Agent Graph...")
+        builder = StateGraph(MCPTravelState)
+
+        # 1. Add Nodes
         builder.add_node("airbnbAgent", airbnb_agent_node)
         builder.add_node("weatherAgent", weather_agent_node)
         builder.add_node("tourAgent", tour_guide_node)
 
-        # 2. Parallel Fan-Out from START to concurrent agents
+        # 2. Parallel fan-out
         builder.add_edge(START, "airbnbAgent")
         builder.add_edge(START, "weatherAgent")
 
-        # 3. Fan-In to Tour Guide synthesis agent
+        # 3. Fan-in to Tour Guide
         builder.add_edge("airbnbAgent", "tourAgent")
         builder.add_edge("weatherAgent", "tourAgent")
 
         # 4. Terminal edge
         builder.add_edge("tourAgent", END)
 
-        # 5. Compile graph with optional checkpointer
         if self.checkpointer:
-            compiled = builder.compile(checkpointer=self.checkpointer)
-        else:
-            compiled = builder.compile()
+            return builder.compile(checkpointer=self.checkpointer)
+        return builder.compile()
 
-        logger.info("MCP Travel Multi-Agent Graph compiled successfully.")
-        return compiled
+    def build_graph(self, mode: str = "harry_potter") -> CompiledStateGraph:
+        """Builds the compiled graph based on the specified mode ('harry_potter' or 'airbnb')."""
+        if mode == "airbnb":
+            return self.build_airbnb_graph()
+        return self.build_hp_graph()
 
-    def get_mermaid_graph(self) -> str:
-        """Generates Mermaid diagram definition of the compiled graph."""
-        compiled = self.build_graph()
+    def get_mermaid_graph(self, mode: str = "harry_potter") -> str:
+        """Generates Mermaid diagram definition for the specified mode."""
+        compiled = self.build_graph(mode=mode)
         return compiled.get_graph().draw_mermaid()
 
+    def save_visualization(self, output_path: str = "app/static/mcp_graph.png") -> None:
+        """Saves visual representations of both MCP sub-graphs to disk."""
+        try:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            # Save HP diagram
+            hp_path = output_path.replace(".png", "_hp.mmd")
+            with open(hp_path, "w", encoding="utf-8") as f:
+                f.write(self.get_mermaid_graph(mode="harry_potter"))
 
-def create_mcp_travel_graph(checkpointer: Optional[BaseCheckpointSaver] = None) -> CompiledStateGraph:
-    """Factory helper to instantiate and compile the MCP travel graph."""
+            # Save Airbnb diagram
+            airbnb_path = output_path.replace(".png", "_airbnb.mmd")
+            with open(airbnb_path, "w", encoding="utf-8") as f:
+                f.write(self.get_mermaid_graph(mode="airbnb"))
+
+            # Save default
+            default_path = output_path.replace(".png", ".mmd")
+            with open(default_path, "w", encoding="utf-8") as f:
+                f.write(self.get_mermaid_graph(mode="harry_potter"))
+
+            logger.info(f"MCP graph visualizations saved to {output_path}")
+        except Exception as e:
+            logger.warning(f"Could not generate MCP graph visualization: {e}")
+
+
+def create_mcp_travel_graph(mode: str = "harry_potter", checkpointer: Optional[BaseCheckpointSaver] = None) -> CompiledStateGraph:
+    """Factory helper to instantiate and compile the MCP graph for the selected mode."""
     builder = MCPTravelGraphBuilder(checkpointer=checkpointer)
-    return builder.build_graph()
+    return builder.build_graph(mode=mode)
+
+
+def create_hp_graph(checkpointer: Optional[BaseCheckpointSaver] = None) -> CompiledStateGraph:
+    """Factory helper to instantiate the Harry Potter QA graph."""
+    builder = MCPTravelGraphBuilder(checkpointer=checkpointer)
+    return builder.build_hp_graph()
+
+
+def create_airbnb_graph(checkpointer: Optional[BaseCheckpointSaver] = None) -> CompiledStateGraph:
+    """Factory helper to instantiate the Airbnb search graph."""
+    builder = MCPTravelGraphBuilder(checkpointer=checkpointer)
+    return builder.build_airbnb_graph()
+

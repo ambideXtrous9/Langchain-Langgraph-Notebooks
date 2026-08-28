@@ -7,24 +7,34 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 
-class MCPTravelState(TypedDict):
-    """State definition for the MCP Travel & Weather multi-agent LangGraph workflow."""
+class MCPState(TypedDict, total=False):
+    """Unified State definition for MCP workflows."""
 
     topic: str
+    mode: str
     knowledge: Annotated[List[AnyMessage], add_messages]
     airbnb_report: str
     weather_report: str
+    hp_report: str
     summary: str
 
 
-class MCPTravelRequest(BaseModel):
-    """Request payload for executing the MCP Travel Graph."""
+# Backwards compatibility alias
+MCPTravelState = MCPState
+
+
+class MCPRequest(BaseModel):
+    """Payload for executing an MCP agent workflow."""
 
     topic: str = Field(
         ...,
-        description="Travel destination, lodging preferences, budget, and dates",
-        examples=["Find me the top 5 Airbnb in Darjeeling for next 3 days within 8000 for 2 people?"],
-        min_length=3,
+        description="Query, travel search criteria, or Harry Potter universe question",
+        examples=["Explain the allegiance history of the Elder Wand across the books"],
+        min_length=2,
+    )
+    mode: str = Field(
+        default="harry_potter",
+        description="Workflow mode: 'harry_potter' (HP Universe QA via Pinecone) or 'airbnb' (Airbnb Lodging & Weather)",
     )
     session_id: Optional[str] = Field(
         default=None,
@@ -32,14 +42,24 @@ class MCPTravelRequest(BaseModel):
     )
 
 
-class MCPTravelResponse(BaseModel):
-    """Response payload containing the synthesized travel guide and agent reports."""
+# Backwards compatibility alias
+MCPTravelRequest = MCPRequest
+
+
+class MCPResponse(BaseModel):
+    """Response payload containing synthesized result and mode-specific reports."""
 
     topic: str
-    airbnb_report: str
-    weather_report: str
-    final_plan: str
-    servers_used: List[str] = Field(default_factory=lambda: ["airbnb", "weather"])
+    mode: str = "harry_potter"
+    final_plan: str = Field(..., description="Synthesized final answer or travel itinerary")
+    hp_report: Optional[str] = Field(default="", description="Retrieved Pinecone vector passages (HP mode)")
+    airbnb_report: Optional[str] = Field(default="", description="Retrieved Airbnb lodging listings (Airbnb mode)")
+    weather_report: Optional[str] = Field(default="", description="Retrieved 3-day weather forecast (Airbnb mode)")
+    servers_used: List[str] = Field(default_factory=lambda: ["pinecone"])
+
+
+# Backwards compatibility alias
+MCPTravelResponse = MCPResponse
 
 
 class MCPToolsListResponse(BaseModel):
