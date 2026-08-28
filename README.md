@@ -137,7 +137,7 @@ graph TD;
 	classDef last fill:#bfb6fc
 ```
 
-##### C. Model Context Protocol (MCP) Multi-Agent Intelligence Graphs
+#### C. Model Context Protocol (MCP) Multi-Agent Intelligence Graphs
 
 ##### Mode 1: ⚡ Multi-Hop Harry Potter Lore QA Graph (`@pinecone-database/mcp`)
 ```mermaid
@@ -158,6 +158,31 @@ flowchart TD
     AirbnbAgent --> TourAgent[3. tourAgent\nTour Guide Synthesizer & Stay-Weather Match]
     WeatherAgent --> TourAgent
     TourAgent --> EndNode([END])
+    
+    classDef default fill:#f2f0ff,line-height:1.2
+```
+
+#### D. Text-to-SQL Analyst Architecture Graph (`SQLDatabaseToolkit`)
+```mermaid
+flowchart TD
+    Start([User Natural Language Query]) --> SQLAgent[1. create_sql_agent\nSQLDatabaseToolkit Orchestrator]
+    SQLAgent --> ListTables[2. sql_db_list_tables\nSchema Introspection & Table Discovery]
+    ListTables --> QueryChecker[3. sql_db_query_checker\nSyntax Validation & Dialect Correction]
+    QueryChecker --> ExecuteSQL[4. sql_db_query\nSafe Read-Only PostgreSQL Execution]
+    ExecuteSQL --> Synthesizer[5. Tabular Data & Explanation Synthesizer]
+    Synthesizer --> EndNode([Synthesized Explanation & Interactive Data Table])
+    
+    classDef default fill:#f2f0ff,line-height:1.2
+```
+
+#### E. General Assistant Memory Graph (`PostgresChatMessageHistory`)
+```mermaid
+flowchart TD
+    Start([User Message + Session ID]) --> FetchHistory[1. PostgresChatMessageHistory\nThread Checkpoint & Session Memory Retrieval]
+    FetchHistory --> ContextAssembler[2. Context & History Assembler\nTrim & Token Budget Window]
+    ContextAssembler --> ChatLLM[3. ChatGroq Inference\nStateful Conversational Generation]
+    ChatLLM --> AppendHistory[4. Append Message & Update Postgres Checkpoint]
+    AppendHistory --> EndNode([Streaming Response & Memory Persisted])
     
     classDef default fill:#f2f0ff,line-height:1.2
 ```
@@ -245,9 +270,9 @@ When selecting the integration method between the **`mcp.so` NPM/npx stdio subpr
 2. **Deterministic Lifecycle**: Process lifecycle is synchronously bound to FastAPI's `lifespan` context manager via `asyncio`.
 3. **Resilient Fallback**: If the external stdio MCP server is offline or fails network resolution, `MCPClientManager` automatically falls back to internal search adapters with zero service interruption.
 
-#### C. Multi-Hop Reasoning Protocol Architecture (`hpSearchAgent` & `hpLoreScholar`)
+#### C. Autonomous Dynamic Multi-Hop Reasoning Architecture (`hpSearchAgent` & `hpLoreScholar`)
 
-The Harry Potter QA engine implements an advanced **Multi-Hop Reasoning ReAct Architecture** that traverses the 7-book corpus (`hpvdb-openai`) through iterative semantic retrieval hops:
+The Harry Potter QA engine implements an **Autonomous ReAct Reasoning Architecture** that dynamically navigates the 7-book corpus (`hpvdb-openai`) using Pinecone MCP tools:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -256,38 +281,25 @@ The Harry Potter QA engine implements an advanced **Multi-Hop Reasoning ReAct Ar
                                        │
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ 🌲 STEP 1: Index Discovery & Namespace Introspection                        │
-│   - Tools: `list-indexes`, `describe-index`, `describe-index-stats`        │
-│   - Introspects index readiness, vector counts, and namespaces in hpvdb     │
+│ 🧠 AUTONOMOUS REACT REASONING & DYNAMIC TOOL SELECTION (`hpSearchAgent`)    │
+│  - Non-deterministic, LLM-driven tool selection based on the specific query │
+│  - Flexible multi-hop iterations (calls `search-records` multiple times)    │
+│  - Intelligently skips irrelevant tools (e.g. schema introspection)         │
+│  - Applies cross-encoder `rerank-documents` dynamically when needed         │
 └──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
+                                       │ (Canonical Excerpts & Evidence)
                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ 🔗 STEP 2: Hop 1 — Core Entity & Origin Retrieval                          │
-│   - Tools: `search-records`, `pinecone_multihop_search`                    │
-│   - Queries foundational lore, origins, and first book appearances          │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 🔗 STEP 3: Hop 2 — Causal Transition & Conflict Retrieval                  │
-│   - Tools: `search-records`, `cascading-search`                            │
-│   - Queries turning points, battles, transfers of ownership, or spells     │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 🔗 STEP 4: Hop 3 — Climax, Canonical Resolution & Rules                    │
-│   - Tools: `search-records`, `rerank-documents` (`pinecone-rerank-v0`)     │
-│   - Cross-verifies final allegiance mechanics, Horcrux destruction, etc.   │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ ⚡ STEP 5: Master Lore Scholar Synthesis (`hpLoreScholar`)                  │
-│   - Synthesizes the full chronological causal chain with book citations    │
+│ ⚡ MASTER LORE SCHOLAR SYNTHESIS (`hpLoreScholar`)                          │
+│  - Synthesizes the full chronological causal chain with book citations      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+##### Autonomous Tool Calling Principles:
+1. **Zero Pre-Determined Checklists**: The agent does not execute rigid sequential steps. Simple queries may trigger 1 or 2 focused searches, while complex cross-book investigations iteratively trace clues across multiple targeted queries.
+2. **Multiple Invocations Per Tool**: Search tools like `search-records` can be invoked multiple times in sequence with refined keywords, entity names, or filter criteria uncovered from prior retrieval hops.
+3. **Selective Skipping**: Diagnostic tools (`list-indexes`, `describe-index`, `describe-index-stats`, `search-docs`) are called only when schema or syntax inspection is genuinely needed.
+4. **Smart Stopping Condition**: The agent terminates tool execution and passes findings to `hpLoreScholar` as soon as sufficient canonical evidence is gathered.
 
 ##### Full Pinecone MCP Tool Suite Matrix:
 | Pinecone MCP Tool | Category | Role in Multi-Hop Reasoning |

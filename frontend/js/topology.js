@@ -99,17 +99,36 @@ class TopologyController {
 
     renderBox.innerHTML = '<div class="mono" style="color: var(--slate);"><span class="spin">⟳</span> Fetching compiled graph definition...</div>';
 
-    let endpoint = CONFIG.ENDPOINTS.GRAPH_MERMAID;
-    if (type === "research") endpoint = CONFIG.ENDPOINTS.RESEARCH_MERMAID;
-    if (type === "mcp") {
-      const mode = localStorage.getItem("rp360_mcp_mode") || "harry_potter";
-      endpoint = `${CONFIG.ENDPOINTS.MCP_MERMAID}?mode=${mode}`;
-    }
+    let dsl = "";
 
     try {
-      const dsl = await api.request(endpoint, { includeAuth: false });
-      this.mermaidSource = dsl;
+      if (type === "regulatory") {
+        dsl = await api.request(CONFIG.ENDPOINTS.GRAPH_MERMAID, { includeAuth: false });
+      } else if (type === "research") {
+        dsl = await api.request(CONFIG.ENDPOINTS.RESEARCH_MERMAID, { includeAuth: false });
+      } else if (type === "mcp") {
+        const mode = localStorage.getItem("rp360_mcp_mode") || "harry_potter";
+        dsl = await api.request(`${CONFIG.ENDPOINTS.MCP_MERMAID}?mode=${mode}`, { includeAuth: false });
+      } else if (type === "sql") {
+        dsl = `flowchart TD
+    Start([User Natural Language Query]) --> SQLAgent[1. create_sql_agent\\nSQLDatabaseToolkit Orchestrator]
+    SQLAgent --> ListTables[2. sql_db_list_tables\\nSchema Introspection & Table Discovery]
+    ListTables --> QueryChecker[3. sql_db_query_checker\\nSyntax Validation & Dialect Correction]
+    QueryChecker --> ExecuteSQL[4. sql_db_query\\nSafe Read-Only PostgreSQL Execution]
+    ExecuteSQL --> Synthesizer[5. Tabular Data & Explanation Synthesizer]
+    Synthesizer --> EndNode([Synthesized Explanation & Interactive Data Table])
+    classDef default fill:#f2f0ff,line-height:1.2`;
+      } else if (type === "chat") {
+        dsl = `flowchart TD
+    Start([User Message + Session ID]) --> FetchHistory[1. PostgresChatMessageHistory\\nThread Checkpoint & Session Memory Retrieval]
+    FetchHistory --> ContextAssembler[2. Context & History Assembler\\nTrim & Token Budget Window]
+    ContextAssembler --> ChatLLM[3. ChatGroq Inference\\nStateful Conversational Generation]
+    ChatLLM --> AppendHistory[4. Append Message & Update Postgres Checkpoint]
+    AppendHistory --> EndNode([Streaming Response & Memory Persisted])
+    classDef default fill:#f2f0ff,line-height:1.2`;
+      }
 
+      this.mermaidSource = dsl;
       if (dslCode) dslCode.textContent = dsl;
 
       if (window.mermaid && dsl) {

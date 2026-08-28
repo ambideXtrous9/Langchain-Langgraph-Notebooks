@@ -1212,12 +1212,34 @@ class ChatPlatformController {
     drawer.classList.add("is-open");
     container.innerHTML = '<div class="mono" style="color: var(--slate); padding: 24px;"><span class="spin">⟳</span> Rendering compiled StateGraph...</div>';
 
-    let endpoint = CONFIG.ENDPOINTS.GRAPH_MERMAID;
-    if (this.activeAgentId === "research") endpoint = CONFIG.ENDPOINTS.RESEARCH_MERMAID;
-    if (this.activeAgentId === "mcp") endpoint = `${CONFIG.ENDPOINTS.MCP_MERMAID}?mode=${mode}`;
+    let dsl = "";
 
     try {
-      const dsl = await api.request(endpoint, { includeAuth: false });
+      if (this.activeAgentId === "regulatory") {
+        dsl = await api.request(CONFIG.ENDPOINTS.GRAPH_MERMAID, { includeAuth: false });
+      } else if (this.activeAgentId === "research") {
+        dsl = await api.request(CONFIG.ENDPOINTS.RESEARCH_MERMAID, { includeAuth: false });
+      } else if (this.activeAgentId === "mcp") {
+        dsl = await api.request(`${CONFIG.ENDPOINTS.MCP_MERMAID}?mode=${mode}`, { includeAuth: false });
+      } else if (this.activeAgentId === "sql") {
+        dsl = `flowchart TD
+    Start([User Natural Language Query]) --> SQLAgent[1. create_sql_agent\\nSQLDatabaseToolkit Orchestrator]
+    SQLAgent --> ListTables[2. sql_db_list_tables\\nSchema Introspection & Table Discovery]
+    ListTables --> QueryChecker[3. sql_db_query_checker\\nSyntax Validation & Dialect Correction]
+    QueryChecker --> ExecuteSQL[4. sql_db_query\\nSafe Read-Only PostgreSQL Execution]
+    ExecuteSQL --> Synthesizer[5. Tabular Data & Explanation Synthesizer]
+    Synthesizer --> EndNode([Synthesized Explanation & Interactive Data Table])
+    classDef default fill:#f2f0ff,line-height:1.2`;
+      } else if (this.activeAgentId === "chat") {
+        dsl = `flowchart TD
+    Start([User Message + Session ID]) --> FetchHistory[1. PostgresChatMessageHistory\\nThread Checkpoint & Session Memory Retrieval]
+    FetchHistory --> ContextAssembler[2. Context & History Assembler\\nTrim & Token Budget Window]
+    ContextAssembler --> ChatLLM[3. ChatGroq Inference\\nStateful Conversational Generation]
+    ChatLLM --> AppendHistory[4. Append Message & Update Postgres Checkpoint]
+    AppendHistory --> EndNode([Streaming Response & Memory Persisted])
+    classDef default fill:#f2f0ff,line-height:1.2`;
+      }
+
       if (window.mermaid && dsl) {
         const id = `drawer-mermaid-${Date.now()}`;
         const { svg } = await window.mermaid.render(id, dsl);
