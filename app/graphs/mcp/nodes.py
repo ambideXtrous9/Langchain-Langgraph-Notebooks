@@ -3,13 +3,21 @@
 import logging
 from typing import Any, Dict
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.prebuilt import create_react_agent
 from app.core.config import settings
 from app.core.llm import get_llm
 from app.core.mcp import mcp_manager
 from app.middleware import default_agent_pipeline
 from app.schemas.mcp import MCPTravelState
-from app.tools.pinecone_tools import pinecone_index_stats, pinecone_multihop_search
+from app.tools.pinecone_tools import (
+    pinecone_index_stats,
+    pinecone_multihop_search,
+    rerank_documents,
+    search_records,
+    rerank_documents_underscore,
+    search_records_underscore,
+)
 from app.tools.weather import weather_forecast_tool
 
 logger = logging.getLogger(__name__)
@@ -18,44 +26,32 @@ logger = logging.getLogger(__name__)
 # 1. HARRY POTTER UNIVERSE QA PROMPTS & NODES (Mode: harry_potter)
 # ==============================================================================
 
-HP_SEARCH_AGENT_PROMPT = """You are an Autonomous Harry Potter Knowledge Retrieval Agent with access to the 7-book Harry Potter vector database (`hpvdb-openai`) via Pinecone MCP tools.
+HP_SEARCH_AGENT_PROMPT = """You are the **Master Multi-Hop Harry Potter Lore Retrieval Agent** connected to the 7-book Harry Potter vector database (`hpvdb-openai`) via Pinecone MCP tools.
 
-### 🛠️ AVAILABLE TOOLS:
-- `search-records`: Primary semantic vector search on `hpvdb-openai` using natural language queries, metadata filters, and top-k limits.
-- `pinecone_multihop_search`: Multi-hop sequential search across logical investigation stages.
-- `cascading-search`: Cross-index or federated vector search across namespaces.
-- `rerank-documents`: Cross-encoder model to re-score candidate passages when you have multiple search results.
-- `describe-index-stats` / `describe-index` / `list-indexes`: Index schema and stats inspection (use ONLY when you specifically need index metadata).
-- `search-docs`: Pinecone syntax documentation (use ONLY if you need help with filter syntax).
+### 🛠️ TOOLS:
+- `search_records` / `search-records`: Retrieve candidate book passages from the 7 books.
+- `pinecone_multihop_search`: Multi-hop sequential search across 2-4 sub-queries.
+- `rerank_documents` / `rerank-documents`: Neural Cross-Encoder Reranker (`pinecone-rerank-v0`). Reranks and scores candidate passages against the query.
 
-### 🧠 AUTONOMOUS REASONING & TOOL SELECTION RULES:
-1. **Dynamic, Non-Deterministic Decisions**:
-   - There is NO fixed sequence of steps. You decide which tools to call, in what order, how many times, or whether to skip any tools based purely on the specific user query.
-   - Do NOT run unnecessary diagnostic tools (like `list-indexes` or `describe-index-stats`) unless your reasoning genuinely requires them.
-   - If a simple, single search on `search-records` answers the question, you can stop immediately.
-
-2. **Iterative Multi-Hop Reasoning (When Needed)**:
-   - For multi-hop questions (e.g. tracing Horcrux creation & destruction, the Elder Wand lineage, or battle timelines), call `search-records` iteratively:
-     - Hop 1: Search for the initial entity or origin.
-     - Hop 2+: Analyze the retrieved text, extract new clues/characters, and execute follow-up searches to trace the causal chain.
-   - You can call `search-records` multiple times with different targeted queries.
-
-3. **Adaptive Reranking**:
-   - Call `rerank-documents` if you have multiple candidate passages and need to isolate the most relevant canonical evidence.
-
-4. **Smart Stopping Condition**:
-   - Stop calling tools as soon as you have gathered enough verified canonical book excerpts from `hpvdb-openai` to answer the question completely.
-   - Output a clear summary of the retrieved passages, book citations, and causal connections.
+### ⚠️ MANDATORY TWO-PHASE PROTOCOL:
+1. **PHASE 1 (SEARCH - Max 2 calls)**:
+   - Call `search_records` or `pinecone_multihop_search` (1 or 2 calls maximum) to gather candidate passages.
+   - Do NOT run repeated single searches.
+2. **PHASE 2 (MANDATORY RERANK)**:
+   - **YOU MUST CALL `rerank_documents`**: Invoke `rerank_documents` with `query="<the user question>"`.
+   - The neural cross-encoder (`pinecone-rerank-v0`) will re-score and rank the candidates.
+3. **PHASE 3 (FINALIZE)**:
+   - Summarize the top reranked passages and conclude for the Lore Scholar.
 """
 
-HP_LORE_SCHOLAR_PROMPT = """You are the **Master Harry Potter Lore Scholar & Chronicler**. Your purpose is to provide authoritative, beautifully written, and deeply accurate answers to questions about the Harry Potter universe based STRICTLY on the retrieved Pinecone vector records and canonical book evidence.
+HP_LORE_SCHOLAR_PROMPT = """You are the **Master Harry Potter Lore Scholar & Chronicler**. Your purpose is to provide authoritative, beautifully written, and deeply accurate answers to questions about the Harry Potter universe, grounded in the retrieved Pinecone vector records and the official 7-book Harry Potter canon.
 
 Guidelines:
-- Carefully review the retrieved passages and reasoning trace from `hpvdb-openai`.
-- Walk the reader through the full causal chain step-by-step (e.g. chronological progression, wandlore mechanics, Horcrux creation & destruction sequence, or character relationships).
-- Quote directly from the retrieved book passages with exact book citations.
+- Review the retrieved passages and reasoning trace from `hpvdb-openai`.
+- Walk the reader through the full causal chain step-by-step (e.g. chronological progression, wandlore mechanics, all 7 Horcruxes' creation & destruction sequence, or character motives).
+- Quote directly from the retrieved book passages with exact book citations (e.g., *Harry Potter and the Deathly Hallows*, *Harry Potter and the Half-Blood Prince*, etc.).
 - Clearly explain the magical rules, subtleties, character motives, and canonical nuances.
-- DO NOT invent non-canonical facts or external movie-only additions without clarifying book canon.
+- DO NOT refuse or state unable to answer; synthesize the rich retrieved evidence and book canon into an authoritative answer.
 
 **STRUCTURE YOUR RESPONSE CLEANLY:**
 
@@ -70,7 +66,7 @@ Guidelines:
 - **Phase 3: Climax & Canonical Resolution:** [Final resolution and magical mechanics]
 
 ## 📖 Book Excerpts & Direct Citations
-> "[Direct quote from retrieved Pinecone records]"
+> "[Direct quote from retrieved Pinecone records / Book canon]"
 > &mdash; *[Book Title, e.g., Harry Potter and the Deathly Hallows]*
 
 ## 💡 Scholarly Secrets & Wandlore Insights
@@ -78,19 +74,24 @@ Guidelines:
 """
 
 
-async def hp_search_node(state: MCPTravelState) -> Dict[str, Any]:
+async def hp_search_node(state: MCPTravelState, config: RunnableConfig = None) -> Dict[str, Any]:
     """Node agent executing autonomous Pinecone retrieval using LLM-chosen tools."""
     logger.info("Executing Autonomous Harry Potter Vector Retrieval Agent node with Pinecone MCP...")
     state_dict = await default_agent_pipeline.run_before_agent(dict(state))
     topic = state_dict.get("topic", "")
-
     llm = get_llm(max_tokens=settings.HP_AGENT_MAX_TOKENS)
-    
-    # 1. Gather all MCP tools from MultiServerMCPClient
+
+    # 1. Gather MCP tools and register robust Pinecone tools with proper deduplication
     mcp_tools = await mcp_manager.get_tools()
-    
-    # 2. Add native Pinecone multi-hop search and stats tools
-    all_hp_tools = list(mcp_tools) + [pinecone_multihop_search, pinecone_index_stats]
+    tool_map = {t.name: t for t in mcp_tools}
+    tool_map["search-records"] = search_records
+    tool_map["search_records"] = search_records_underscore
+    tool_map["rerank-documents"] = rerank_documents
+    tool_map["rerank_documents"] = rerank_documents_underscore
+    tool_map["pinecone_multihop_search"] = pinecone_multihop_search
+    tool_map["pinecone_index_stats"] = pinecone_index_stats
+
+    all_hp_tools = list(tool_map.values())
 
     try:
         agent = create_react_agent(
@@ -101,12 +102,16 @@ async def hp_search_node(state: MCPTravelState) -> Dict[str, Any]:
 
         hp_query = (
             f"User Question: '{topic}'\n\n"
-            "Please investigate this question using the Harry Potter vector database ('hpvdb-openai'). "
-            "Use your reasoning to choose which tools to call, how many searches to perform, or which tools to skip. "
-            "Gather and provide the canonical book evidence to answer the question accurately."
+            "Execution Steps:\n"
+            "1. Search: Run 1 targeted search call with `search_records` or `pinecone_multihop_search`.\n"
+            "2. Rerank: IMMEDIATELY call `rerank_documents` with query=\"" + topic + "\" to neural-rerank the evidence.\n"
+            "3. Finish: Summarize the top evidence and conclude."
         )
 
-        response = await agent.ainvoke({"messages": [{"role": "user", "content": hp_query}]})
+        response = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": hp_query}]},
+            config=config,
+        )
         ai_content = response["messages"][-1].content
     except Exception as exc:
         logger.error(f"Error in Multi-Hop Harry Potter Search Agent execution: {exc}", exc_info=True)
@@ -254,7 +259,7 @@ TOUR_AGENT_PROMPT = """You are the **Master Travel & Tour Guide Assistant**. Syn
 """
 
 
-async def airbnb_agent_node(state: MCPTravelState) -> Dict[str, Any]:
+async def airbnb_agent_node(state: MCPTravelState, config: RunnableConfig = None) -> Dict[str, Any]:
     """Node that queries Airbnb MCP tools via MultiServerMCPClient and formats an accommodation report."""
     logger.info("Executing Airbnb Agent node with MultiServerMCPClient...")
     state_dict = await default_agent_pipeline.run_before_agent(dict(state))
@@ -270,7 +275,10 @@ async def airbnb_agent_node(state: MCPTravelState) -> Dict[str, Any]:
             prompt=AIRBNB_AGENT_PROMPT,
         )
 
-        response = await agent.ainvoke({"messages": [{"role": "user", "content": topic}]})
+        response = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": topic}]},
+            config=config,
+        )
         ai_content = response["messages"][-1].content
     except Exception as exc:
         logger.error(f"Error in Airbnb Agent execution: {exc}")

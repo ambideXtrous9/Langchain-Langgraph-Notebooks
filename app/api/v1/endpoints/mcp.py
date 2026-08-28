@@ -90,12 +90,22 @@ async def _stream_harry_potter_qa(topic: str) -> AsyncGenerator[str, None]:
             # Pinecone Tool Events
             elif event_type == "on_tool_start":
                 tool_name = event.get("name", "pinecone_tool")
-                tool_hint = f"Pinecone MCP Tool [{tool_name}]: Searching Harry Potter vector records in 'hpvdb-openai'..."
+                if "rerank" in tool_name.lower():
+                    tool_hint = f"Pinecone Neural Reranker [{tool_name}]: Cross-scoring candidate passages with 'pinecone-rerank-v0'..."
+                elif "multihop" in tool_name.lower():
+                    tool_hint = f"Pinecone Multi-Hop Search [{tool_name}]: Executing sequential multi-stage retrieval..."
+                else:
+                    tool_hint = f"Pinecone MCP Tool [{tool_name}]: Searching Harry Potter vector records in 'hpvdb-openai'..."
                 yield f"data: {json.dumps({'event': 'tool_start', 'tool': tool_name, 'data': tool_hint})}\n\n"
 
             elif event_type == "on_tool_end":
                 tool_name = event.get("name", "pinecone_tool")
-                tool_hint = f"Pinecone MCP Tool [{tool_name}]: Retrieved matching book passages & metadata."
+                if "rerank" in tool_name.lower():
+                    tool_hint = f"Pinecone Neural Reranker [{tool_name}]: Top candidate passages successfully scored and ranked."
+                elif "multihop" in tool_name.lower():
+                    tool_hint = f"Pinecone Multi-Hop Search [{tool_name}]: Multi-stage candidate passages retrieved."
+                else:
+                    tool_hint = f"Pinecone MCP Tool [{tool_name}]: Retrieved matching book passages & metadata."
                 yield f"data: {json.dumps({'event': 'tool_end', 'tool': tool_name, 'data': tool_hint})}\n\n"
 
             # Node End Events

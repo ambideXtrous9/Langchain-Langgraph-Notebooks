@@ -24,36 +24,6 @@ class AuthDatabaseManager:
         self._in_memory_blacklist: set = set()
         self._in_memory_reset_tokens: Dict[str, Dict[str, Any]] = {}
         self._is_in_memory: bool = False
-        self._load_fallback()
-
-    def _get_fallback_file(self) -> str:
-        os.makedirs("app/static", exist_ok=True)
-        return "app/static/auth_store.json"
-
-    def _load_fallback(self) -> None:
-        """Loads persistent auth fallback accounts from disk."""
-        try:
-            path = self._get_fallback_file()
-            if os.path.exists(path):
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    self._in_memory_users = data.get("users", {})
-                    self._in_memory_reset_tokens = data.get("reset_tokens", {})
-                    logger.info(f"Loaded {len(self._in_memory_users)} cached user accounts from fallback file.")
-        except Exception as e:
-            logger.warning(f"Could not load auth fallback file: {e}")
-
-    def _save_fallback(self) -> None:
-        """Persists auth accounts to disk."""
-        try:
-            path = self._get_fallback_file()
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump({
-                    "users": self._in_memory_users,
-                    "reset_tokens": self._in_memory_reset_tokens,
-                }, f, indent=2, default=str)
-        except Exception as e:
-            logger.warning(f"Could not save auth fallback file: {e}")
 
     async def initialize(self) -> None:
         """Initializes PostgreSQL connection pool and creates auth tables."""
@@ -270,7 +240,6 @@ class AuthDatabaseManager:
                 "updated_at": now,
             }
             self._in_memory_users[email_normalized] = user_record
-            self._save_fallback()
             return user_record
 
         async with self.pool.connection() as conn:
@@ -296,7 +265,6 @@ class AuthDatabaseManager:
                 if u.get("id") == str(user_id):
                     u["hashed_password"] = new_hashed_password
                     u["updated_at"] = now
-                    self._save_fallback()
                     return True
             return False
 
