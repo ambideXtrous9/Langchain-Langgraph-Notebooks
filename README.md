@@ -338,7 +338,7 @@ sequenceDiagram
     rect rgb(255, 250, 240)
         Note over Endpoint,Langfuse: Execution, Checkpointing & Real-Time Streaming
         Endpoint->>Engine: graph.astream_events(inputs, config=thread_config, version="v2")
-        Engine<->AgentDB: AsyncPostgresSaver(pool): Save/Load thread checkpoint blobs & writes
+        Engine<<->>AgentDB: AsyncPostgresSaver(pool): Save/Load thread checkpoint blobs & writes
         Engine->>Langfuse: CallbackHandler records non-blocking traces, latency & token usage
         Engine-->>Endpoint: Yield event dicts (on_chat_model_stream tokens, stage hints)
     end
@@ -398,7 +398,7 @@ sequenceDiagram
         loop Bi-directional Streaming Interaction
             Client->>Gateway: websocket.receive_text() -> json.loads() {"action": "start" | "resume", "user_input": "..."}
             Gateway->>LangGraph: astream_events(inputs, config=thread_config, version="v2")
-            LangGraph<->Checkpointer: AsyncPostgresSaver: persist state snapshots in agent_db
+            LangGraph<<->>Checkpointer: AsyncPostgresSaver: persist state snapshots in agent_db
             LangGraph-->>Gateway: Yield real-time model tokens and stage execution hints
             Gateway-->>Client: websocket.send_json({"type": "token", "token": "..."})
         end
