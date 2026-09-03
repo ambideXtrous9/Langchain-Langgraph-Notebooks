@@ -15,6 +15,16 @@ A reference implementation and production-grade boilerplate for building robust,
 ## 📑 Table of Contents
 
 - [Architectural Overview](#-architectural-overview)
+  - [0. Agent Architecture & Cognitive Subsystems](#0-agent-architecture--cognitive-subsystems)
+  - [1. System Gateway & Multi-DB Architecture (Authentication, Authorization & Guarded Endpoints)](#1-system-gateway--multi-db-architecture-authentication-authorization--guarded-endpoints)
+    - [A. End-to-End System Gateway & Multi-DB Gateway Topology](#a-end-to-end-system-gateway--multi-db-gateway-topology)
+    - [B. Authentication Lifecycle & Cryptographic Pipeline](#b-authentication-lifecycle--cryptographic-pipeline-appcoresecuritypy--appcoreauth_databasepy)
+    - [C. Authorization Engine & Guard Pipeline](#c-authorization-engine--guard-pipeline-appapidepspy)
+    - [D. Accessing Guarded Endpoints & Tenant Isolation](#d-accessing-guarded-endpoints--tenant-isolation)
+    - [E. WebSocket Handshake & Streaming Authentication](#e-websocket-handshake--streaming-authentication-appapiv1endpointswebsocketpy)
+    - [F. Comprehensive Execution Path & Technical Component Matrix](#f-comprehensive-execution-path--technical-component-matrix)
+    - [G. Technology Stack, Specific Packages & Architectural Roles](#g-technology-stack-specific-packages--architectural-roles)
+  - [2. Workflow Graphs](#2-workflow-graphs)
 - [Core Mechanisms & Design Patterns](#-core-mechanisms--design-patterns)
 - [Project Directory Structure](#-project-directory-structure)
 - [API Endpoints Specification](#-api-endpoints-specification)
@@ -42,37 +52,453 @@ The architecture implements an end-to-end agentic workflow combining:
 
 ---
 
-### 1. System Gateway & Multi-DB Architecture (Authentication & Authorization)
+### 1. System Gateway & Multi-DB Architecture (Authentication, Authorization & Guarded Endpoints)
 
-The system is decoupled into **Public Authentication** and **Protected Agent Services** backed by dual isolated databases in PostgreSQL:
+The platform implements an **Enterprise Zero-Trust Dual-Database Gateway Architecture** that decouples identity management and security credentials (`auth_db`) from agentic execution, state checkpointing, and thread histories (`agent_db`).
+
+Every incoming request flows through a strict multi-layer defense pipeline consisting of:
+1. **Network & Transport Layer:** CORS origin validation and WebSocket handshake validation.
+2. **Authentication Subsystem (`auth_db`):** OWASP-compliant Argon2id password hashing, time-limited cryptographic JWT issuance, and persistent JTI revocation blacklisting.
+3. **Authorization & Guard Pipeline (`app/api/deps.py`):** OAuth2 Bearer token extraction, signature verification, expiration checks, blacklisting queries, and Role-Based Access Control (RBAC).
+4. **Tenant Isolation & Context Propagation:** Dynamic thread namespace isolation (`user-{id}-{uuid}`) and Langfuse `RunnableConfig` metadata binding.
+5. **Agent Middleware Interception (`app/middleware/`):** Sliding-window rate limiting, PII/PHI sanitization, human-in-the-loop tool approvals, and chat summarization.
+6. **Execution Engines & State Persistence (`agent_db`):** LangGraph StateGraphs, `AsyncPostgresSaver` checkpointing, stdio Model Context Protocol (MCP) servers, and PostgreSQL chat memory.
+
+---
+
+#### A. End-to-End System Gateway & Multi-DB Gateway Topology
+
+```mermaid
+flowchart TD
+    Client["🖥️ Client Layer\n(Browser Vanilla JS fetch / EventSource / WebSocket)\nAuth Token: LocalStorage key 'access_token'"]
+
+    subgraph Gateway ["🚪 FastAPI Gateway & Reverse Proxy (Port 8000) [Uvicorn 0.52.4 + uvloop + httptools]"]
+        CORS["CORSMiddleware (fastapi.middleware.cors)\nConfig: settings.CORS_ORIGINS\nCredentials: True, Methods: *, Headers: *"]
+        ExcHandler["Global Exception Handlers (app/core/exceptions.py)\nHandles: RequestValidationError, HTTPException,\nRateLimitExceededException, 500 Fallback"]
+        Router["API v1 Router Aggregator (app/api/v1/router.py)\nPrefix mounts: /auth, /interact, /research, /mcp, /chat, /sql, /ws"]
+    end
+
+    Client -->|HTTP REST / SSE / WebSocket| CORS
+    CORS --> ExcHandler
+    ExcHandler --> Router
+
+    subgraph AuthSubsystem ["🔐 Public Authentication Subsystem (/auth/*) [app/api/v1/endpoints/auth.py]"]
+        SignupEp["POST /auth/signup\n• Pkg: pwdlib==0.3.1 (argon2-cffi)\n• Hasher: Argon2id (m=64MB, t=3, p=4)\n• Schema: UserSignupRequest -> UserResponse (201)"]
+        LoginEp["POST /auth/login\n• Pkg: pyjwt==2.13.0 & python-multipart\n• Ingestion: OAuth2 form data OR JSON body\n• Crypto: HMAC-SHA256 (HS256) -> TokenResponse"]
+        ForgotEp["POST /auth/forgot-password\n• Pkg: hashlib.sha256\n• Token: 15m time-limited reset JWT\n• Storage: SHA-256 hash in password_reset_tokens"]
+        ResetEp["POST /auth/reset-password\n• Verification: verify_and_consume_reset_token()\n• Mutation: is_used=TRUE & UPDATE users hash"]
+        LogoutEp["POST /auth/logout\n• Revocation: Extract 'jti' claim via pyjwt\n• Persistence: INSERT INTO token_blacklist (auth_db)"]
+    end
+
+    subgraph GuardPipeline ["🛡️ FastAPI Security Guard Pipeline [app/api/deps.py]"]
+        OAuth2Extract["1. oauth2_scheme\n• Class: fastapi.security.OAuth2PasswordBearer\n• URL: /auth/login (Swagger UI integration)\n• Extracts: 'Authorization: Bearer <token>'"]
+        JWTDecode["2. decode_token(token)\n• Pkg: pyjwt==2.13.0\n• Signature: HS256 with settings.JWT_SECRET_KEY\n• Verifies: exp > utcnow (checks ExpiredSignatureError)"]
+        JTIBlacklist["3. is_token_blacklisted(jti)\n• Driver: psycopg==3.3.4 (AsyncConnectionPool)\n• Query: SELECT 1 FROM token_blacklist WHERE token_jti = %s\n• Rejection: 401 Unauthorized ('Token has been revoked')"]
+        UserLookup["4. get_user_by_email(email)\n• Driver: psycopg==3.3.4 (dict_row factory)\n• Query: SELECT ... FROM users WHERE email = %s\n• Resolves: Database User Entity"]
+        ActiveCheck["5. get_current_active_user\n• Dependency: Depends(get_current_user)\n• Asserts: user.is_active == True\n• Rejection: 403 Forbidden ('User account is deactivated')"]
+        RoleCheck["6. require_role(*allowed_roles)\n• Dependency Factory: Closure returning role_checker\n• Asserts: current_user.role in allowed_roles\n• Bypass: is_superuser == True"]
+    end
+
+    subgraph AuthDB ["🗄️ PostgreSQL: auth_db (Port 5432) [psycopg-pool 3.3.1 AsyncConnectionPool]"]
+        UsersTable[("users Table\nid UUID PK, email VARCHAR UNIQUE,\nfull_name, hashed_password (Argon2id),\nis_active, is_superuser, role, created_at")]
+        BlacklistTable[("token_blacklist Table\nid SERIAL PK, token_jti VARCHAR UNIQUE,\nuser_id UUID FK, expires_at TIMESTAMPTZ,\nrevoked_at TIMESTAMPTZ")]
+        ResetTokensTable[("password_reset_tokens Table\nid SERIAL PK, user_id UUID FK,\ntoken_hash VARCHAR UNIQUE (SHA-256),\nexpires_at TIMESTAMPTZ, is_used BOOLEAN")]
+    end
+
+    subgraph MiddlewareLayer ["⚙️ Agent Middleware Suite [app/middleware/]"]
+        RateLimit["RateLimitMiddleware\n• Pkg: collections.deque + time.time()\n• Limiter: Sliding window (60 req / 60s per user_id)\n• Resilience: Circuit breaker (3 consecutive errors)"]
+        PIISanitize["PIIMiddleware\n• Pkg: re (regex) + Luhn Algorithm\n• Detection: SSN, Credit Card, Email, Phone, PHI\n• Sanitization: Masking / Redaction before LLM"]
+        HITLInterception["HumanInTheLoopMiddleware\n• Pkg: langgraph.types.interrupt\n• Intercept: Mutating / compliance tool calls\n• Pauses: Awaits human Command(resume=...)"]
+        Summarizer["SummarizationMiddleware\n• Pkg: tiktoken==0.14.0 BPE counter\n• Trigger: 1200 tokens / 8 messages\n• Compression: Recursive summary of older turns"]
+    end
+
+    subgraph GuardedEndpoints ["⚡ Protected Agent Services (Guarded Endpoints)"]
+        PolicyEp["POST /interact & /thread/*\n• Guard: Depends(get_current_active_user)\n• Stream: FastAPI StreamingResponse (SSE text/event-stream)\n• Thread: f'user-{user.id}-{uuid4()}' isolation\n• State: AsyncPostgresSaver checkpoints"]
+        ResearchEp["POST /research/run & /stream\n• Guard: Depends(get_current_active_user)\n• Stream: FastAPI StreamingResponse (SSE)\n• Graph: Parallel Multi-Critic with defer=True\n• Search: duckduckgo-search==8.1.1 live intelligence"]
+        MCPEp["POST /mcp/run & /stream\n• Guard: Depends(get_current_active_user)\n• Stream: FastAPI StreamingResponse (SSE)\n• Protocol: Model Context Protocol (MCP stdio)\n• Subprocesses: @pinecone-database/mcp & @openbnb"]
+        ChatEp["POST /generic_chat\n• Guard: Depends(get_current_active_user)\n• Pkg: langchain-postgres==0.0.17\n• Memory: PostgresChatMessageHistory (agent_db)\n• LLM: ChatGroq (openai/gpt-oss-120b)"]
+        SQLEp["POST /get_sql_query\n• Guard: Depends(get_current_active_user)\n• Pkg: SQLDatabaseToolkit (langchain_community)\n• Safety: sql_db_query_checker + read-only execution"]
+        WSEp["WS /ws/interact\n• Protocol: FastAPI WebSocket\n• Auth: query_params['token'] pre-accept verify\n• Rejection: close(code=WS_1008_POLICY_VIOLATION)\n• Streaming: Full-duplex JSON frames"]
+    end
+
+    subgraph ExecutionEngines ["🧠 Execution Engines, Toolkits & Observability"]
+        LangGraphPolicy["LangGraph Policy StateGraph\n(add_messages reducer, conditional edges, interrupts)"]
+        LangGraphResearch["LangGraph Research Pipeline\n(Planner, Approver, Synthesizer, Fact/Style Critics, Publisher)"]
+        MCPManager["MCPClientManager (langchain-mcp-adapters==0.3.1)\n(stdio pipes to Node.js MCP worker processes)"]
+        SQLToolkit["SQLDatabaseToolkit\n(Safe Schema Introspection, Dialect Checker, Read-only Query)"]
+        LangfuseTrace["Langfuse Observability (langfuse==4.14.4)\nCallbackHandler attached to RunnableConfig(user_id, email, thread_id)"]
+    end
+
+    subgraph AgentDB ["🗄️ PostgreSQL: agent_db (Port 5432) [psycopg-pool 3.3.1 AsyncConnectionPool]"]
+        CheckpointsTable[("checkpoints & checkpoint_blobs Tables\n• Pkg: langgraph-checkpoint-postgres==3.1.2\n• Storage: Thread checkpoints, state writes, versions")]
+        ChatHistoryTable[("chat_history Table\n• Pkg: langchain-postgres==0.0.17\n• Storage: JSON message turns (HumanMessage, AIMessage)")]
+    end
+
+    Router -->|Public Auth Requests| AuthSubsystem
+    Router -->|Guarded Endpoint Requests| OAuth2Extract
+
+    OAuth2Extract --> JWTDecode
+    JWTDecode --> JTIBlacklist
+    JTIBlacklist --> UserLookup
+    UserLookup --> ActiveCheck
+    ActiveCheck --> RoleCheck
+
+    AuthSubsystem <-->|Parameterized psycopg SQL| AuthDB
+    JTIBlacklist <-->|SELECT 1 FROM token_blacklist| BlacklistTable
+    UserLookup <-->|SELECT * FROM users| UsersTable
+
+    RoleCheck -->|Inject current_user: UserResponse| GuardedEndpoints
+
+    GuardedEndpoints --> MiddlewareLayer
+    MiddlewareLayer --> ExecutionEngines
+    ExecutionEngines --> LangfuseTrace
+
+    PolicyEp <-->|AsyncPostgresSaver Save/Hydrate| CheckpointsTable
+    ChatEp <-->|PostgresChatMessageHistory Append/Read| ChatHistoryTable
+    SQLEp <-->|Read-Only Inspection & SELECT| AgentDB
+    ResearchEp --> LangGraphResearch
+    MCPEp --> MCPManager
+```
+
+---
+
+#### B. Authentication Lifecycle & Cryptographic Pipeline (`app/core/security.py` & `app/core/auth_database.py`)
+
+The authentication subsystem handles identity lifecycle events with industry-standard cryptographic primitives:
+
+1. **Password Hashing with Argon2id (`pwdlib==0.3.1` & `argon2-cffi==25.1.0`)**: Plaintext passwords are never stored. The system uses `pwdlib.PasswordHash.recommended()` (Argon2id), providing memory-hard protection resistant to GPU and ASIC brute-force attacks.
+2. **Access Token Minting (`pyjwt==2.13.0`)**: Upon successful authentication, the server issues a signed JWT (`HS256`) with a cryptographically unique `jti` (UUID v4) and the following payload:
+   ```json
+   {
+     "sub": "user@example.com",
+     "user_id": "8f3b2a7d-5e2a-4a6c-9c1e-3b2a7d5e2a4a",
+     "role": "user",
+     "iat": 1772520000,
+     "exp": 1772523600,
+     "jti": "d3b07384-d113-424a-93f8-5807908b8d42",
+     "token_type": "access"
+   }
+   ```
+3. **Stateful Token Revocation (`psycopg==3.3.4` in `auth_db.token_blacklist`)**: When a user calls `POST /auth/logout`, the token's unique identifier (`jti`) and its expiration timestamp (`exp`) are committed to the `token_blacklist` table in `auth_db`. Any subsequent request presenting this token is immediately rejected with `401 Unauthorized`.
+4. **Time-Limited Password Reset (`hashlib.sha256`)**: The `/auth/forgot-password` endpoint issues a single-use 15-minute token with `token_type: "reset_password"`. The SHA-256 hash of this token is stored in `password_reset_tokens`. When consumed via `/auth/reset-password`, the token is marked `is_used = TRUE` inside an atomic transaction, preventing replay attacks.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Browser Client (SPA Fetch API)
+    participant Gateway as FastAPI Router (app/api/v1/endpoints/auth.py)
+    participant Security as Security & Crypto (pwdlib & pyjwt)
+    participant AuthDB as PostgreSQL auth_db (psycopg==3.3.4 pool)
+
+    Note over Client,AuthDB: Scenario 1: User Registration (/auth/signup) [Pydantic: UserSignupRequest]
+    Client->>Gateway: POST /auth/signup (email, password, full_name)
+    Gateway->>AuthDB: SELECT 1 FROM users WHERE email = %s
+    AuthDB-->>Gateway: None (User does not exist)
+    Gateway->>Security: pwdlib.hash(password) -> Argon2id ($argon2id$v=19$m=65536...)
+    Security-->>Gateway: Hashed password string
+    Gateway->>AuthDB: INSERT INTO users (id, email, hashed_password, role...) VALUES (%s...)
+    AuthDB-->>Gateway: Created User Record (UUID: 8f3b2a7d...)
+    Gateway-->>Client: 201 Created (UserResponse without password)
+
+    Note over Client,AuthDB: Scenario 2: User Login & JWT Token Minting (/auth/login) [python-multipart]
+    Client->>Gateway: POST /auth/login (OAuth2 Form / JSON: username=email, password)
+    Gateway->>AuthDB: SELECT * FROM users WHERE email = %s
+    AuthDB-->>Gateway: User Record (with hashed_password, is_active)
+    Gateway->>Security: pwdlib.verify(plain_pwd, hashed_pwd) [constant-time]
+    Security-->>Gateway: True (Password matched)
+    Gateway->>Security: pyjwt.encode(payload={sub, user_id, role, iat, exp, jti}, JWT_SECRET_KEY, HS256)
+    Security-->>Gateway: Signed Bearer JWT Access Token
+    Gateway-->>Client: 200 OK (TokenResponse: access_token, token_type: "bearer", expires_in: 60)
+
+    Note over Client,AuthDB: Scenario 3: User Logout & Revocation (/auth/logout) [Depends(get_current_active_user)]
+    Client->>Gateway: POST /auth/logout (Header: Authorization: Bearer <token>)
+    Gateway->>Security: pyjwt.decode(token) -> Extract 'jti' and 'exp'
+    Security-->>Gateway: Claims Payload {jti, exp, sub...}
+    Gateway->>AuthDB: INSERT INTO token_blacklist (token_jti, user_id, expires_at) VALUES (%s, %s, %s)
+    AuthDB-->>Gateway: Row inserted & committed
+    Gateway-->>Client: 200 OK (MessageResponse: "Token revoked successfully")
+
+    Note over Client,AuthDB: Scenario 4: Password Reset Flow (/auth/forgot-password & /auth/reset-password)
+    Client->>Gateway: POST /auth/forgot-password (email)
+    Gateway->>AuthDB: SELECT id, email FROM users WHERE email = %s
+    AuthDB-->>Gateway: Found User Record
+    Gateway->>Security: pyjwt.encode(payload={sub, user_id, token_type='reset_password', exp=15m})
+    Security-->>Gateway: Reset JWT Token
+    Gateway->>Gateway: hashlib.sha256(reset_token.encode()).hexdigest()
+    Gateway->>AuthDB: INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (...)
+    Gateway-->>Client: 200 OK (reset_token generated)
+    Client->>Gateway: POST /auth/reset-password (token, new_password)
+    Gateway->>Security: pyjwt.decode(token) -> Assert token_type == 'reset_password'
+    Gateway->>AuthDB: UPDATE password_reset_tokens SET is_used=TRUE WHERE token_hash=%s RETURNING user_id
+    Gateway->>Security: pwdlib.hash(new_password) -> New Argon2id Hash
+    Gateway->>AuthDB: UPDATE users SET hashed_password = %s WHERE id = %s
+    Gateway-->>Client: 200 OK (MessageResponse: "Password reset successfully")
+```
+
+---
+
+#### C. Authorization Engine & Guard Pipeline (`app/api/deps.py`)
+
+Access to protected agent endpoints is guarded by FastAPI's Dependency Injection system. Each guarded route declares dependencies such as `Depends(get_current_active_user)`.
 
 ```
-                                  ┌─────────────────────────────────────────────────────────┐
-                                  │                     FASTAPI GATEWAY                     │
-                                  └────────────────────────────┬────────────────────────────┘
-                                                               │
-                                       ┌───────────────────────┴───────────────────────┐
-                                       │                                               │
-                           [Public Auth Endpoints]                         [Protected Agent Endpoints]
-                                       │                                               │
-                     ┌─────────────────┴─────────────────┐                             │  Depends(get_current_user)
-                     │  POST /auth/signup                │                             ▼
-                     │  POST /auth/login                 │                 ┌───────────────────────┐
-                     │  POST /auth/forgot-password       │                 │ POST /research/run    │
-                     │  POST /auth/reset-password        │                 │ POST /research/stream │
-                     │  POST /auth/logout                │                 │ POST /interact        │
-                     └─────────────────┬─────────────────┘                 │ POST /generic_chat    │
-                                       │                                   │ POST /get_sql_query   │
-                                       │                                   └───────────┬───────────┘
-                                       ▼                                               │
-                     ┌───────────────────────────────────┐                             │ (user_id isolation)
-                     │       POSTGRES: auth_db           │                             ▼
-                     │  - users                          │                 ┌───────────────────────┐
-                     │  - token_blacklist                │                 │  POSTGRES: agent_db   │
-                     │  - password_reset_tokens          │                 │  - checkpoints        │
-                     └───────────────────────────────────┘                 │  - chat_history       │
-                                                                           └───────────────────────┘
+HTTP Request with Header: "Authorization: Bearer <token>"
+                           │
+                           ▼
+              ┌──────────────────────────┐
+              │      oauth2_scheme       │  Extracts raw Bearer token string
+              └────────────┬─────────────┘
+                           ▼
+              ┌──────────────────────────┐
+              │      decode_token()      │  Validates HS256 signature and exp timestamp
+              └────────────┬─────────────┘
+                           ▼
+              ┌──────────────────────────┐
+              │  is_token_blacklisted()  │  Queries auth_db token_blacklist table by JTI
+              └────────────┬─────────────┘
+                           ▼
+              ┌──────────────────────────┐
+              │   get_user_by_email()    │  Queries auth_db users table by 'sub' claim
+              └────────────┬─────────────┘
+                           ▼
+              ┌──────────────────────────┐
+              │ get_current_active_user  │  Asserts user.is_active == True
+              └────────────┬─────────────┘
+                           ▼
+              ┌──────────────────────────┐
+              │    require_role(...)     │  (Optional) Enforces Role-Based Access Control
+              └────────────┬─────────────┘
+                           ▼
+         Injected UserResponse into Route Handler
 ```
+
+The authorization sequence enforces the following verification steps:
+1. **Header Parsing:** `oauth2_scheme` extracts the bearer token from the `Authorization: Bearer <token>` HTTP header.
+2. **Signature & Expiration Validation:** `decode_token()` validates the cryptographic HMAC-SHA256 signature using `settings.JWT_SECRET_KEY` and confirms that `exp > current_utc_time`.
+3. **Revocation Query:** The unique `jti` claim is looked up in the `token_blacklist` table in `auth_db`. If found, a `401 Unauthorized` exception is thrown immediately.
+4. **Entity Resolution:** The user's current account record is retrieved from `auth_db` by email (`sub`), ensuring that deleted users cannot access the system even with a cryptographically valid token.
+5. **Account Status Verification:** `get_current_active_user` verifies that `is_active` is true. Deactivated accounts receive `403 Forbidden`.
+6. **Role-Based Access Control (RBAC):** `require_role("admin", "operator")` asserts that `current_user.role` matches the allowed role set, bypassing checks for superusers (`is_superuser == True`).
+
+---
+
+#### D. Accessing Guarded Endpoints & Tenant Isolation
+
+Once authorization succeeds, FastAPI injects the authenticated `UserResponse` object (`current_user`) directly into the route handler. The endpoint then orchestrates tenant isolation, middleware execution, and state persistence:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Browser Client (EventSource / Fetch API)
+    participant CORS as CORS & Router (fastapi.middleware.cors)
+    participant Deps as FastAPI Guard Pipeline (deps.py Depends(get_current_active_user))
+    participant AuthDB as PostgreSQL auth_db (psycopg==3.3.4 AsyncConnectionPool)
+    participant Middleware as Agent Middleware Suite (RateLimit, PII, HITL, Summarizer)
+    participant Endpoint as Guarded Endpoint Handler (app/api/v1/endpoints/*.py)
+    participant Engine as LangGraph Engine (astream_events version='v2')
+    participant AgentDB as PostgreSQL agent_db (AsyncPostgresSaver)
+    participant Langfuse as Langfuse Observability (langfuse==4.14.4 CallbackHandler)
+
+    Client->>CORS: HTTP Request with Header: "Authorization: Bearer <jwt_access_token>"
+    CORS->>Deps: Invoke Dependency: get_current_active_user()
+    
+    rect rgb(240, 245, 255)
+        Note over Deps,AuthDB: Security Verification & Revocation Pipeline
+        Deps->>Deps: fastapi.security.OAuth2PasswordBearer extracts raw Bearer token string
+        Deps->>Deps: pyjwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'])
+        alt Signature Tampered or Expired (exp <= utcnow)
+            Deps-->>Client: 401 Unauthorized ("Token has expired" or "Invalid token")
+        end
+        Deps->>AuthDB: psycopg: SELECT 1 FROM token_blacklist WHERE token_jti = %s
+        alt Token JTI Found in Blacklist
+            AuthDB-->>Deps: Row Exists (Token was revoked via /auth/logout)
+            Deps-->>Client: 401 Unauthorized ("Token has been revoked. Please log in again.")
+        end
+        Deps->>AuthDB: psycopg: SELECT id, email, role, is_active FROM users WHERE email = %s
+        alt User Not Found or Inactive (is_active == False)
+            Deps-->>Client: 401 Unauthorized / 403 Forbidden ("User account is deactivated")
+        end
+        Deps->>Deps: Instantiate UserResponse(id=uuid, email=sub, role=role, is_active=True)
+    end
+
+    Deps->>Endpoint: Inject current_user: UserResponse into route handler
+
+    rect rgb(245, 255, 245)
+        Note over Endpoint,Middleware: Tenant Isolation & Middleware Interception
+        Endpoint->>Endpoint: Enforce Namespace: thread_id = f"user-{current_user.id}-{uuid.uuid4()}"
+        Endpoint->>Endpoint: get_runnable_config(thread_id, metadata={"user_id": current_user.id, "email": current_user.email})
+        Endpoint->>Middleware: pipeline.run_before_agent(state)
+        Middleware->>Middleware: RateLimitMiddleware: check sliding window timestamp queue (collections.deque per user_id)
+        alt Rate Limit Exceeded (> 60 req / 60s)
+            Middleware-->>Client: 429 Too Many Requests ("Rate limit exceeded. Retry in 60s")
+        end
+        Middleware->>Middleware: PIIMiddleware: regex + Luhn scan -> mask SSN, credit cards, emails, PHI
+    end
+
+    rect rgb(255, 250, 240)
+        Note over Endpoint,Langfuse: Execution, Checkpointing & Real-Time Streaming
+        Endpoint->>Engine: graph.astream_events(inputs, config=thread_config, version="v2")
+        Engine<->AgentDB: AsyncPostgresSaver(pool): Save/Load thread checkpoint blobs & writes
+        Engine->>Langfuse: CallbackHandler records non-blocking traces, latency & token usage
+        Engine-->>Endpoint: Yield event dicts (on_chat_model_stream tokens, stage hints)
+    end
+
+    Endpoint-->>Client: FastAPI StreamingResponse: data: {"token": "...", "stage": "..."}\n\n (text/event-stream)
+```
+
+##### 1. User Isolation & Multi-Tenancy
+- **Thread ID Namespacing:** If a client does not provide a `thread_id`, the system deterministically binds the conversation to the user ID:
+  ```python
+  thread_id = request.thread_id or f"user-{current_user.id}-{uuid.uuid4()}"
+  ```
+- **Checkpoint Isolation:** Checkpoints stored in `agent_db` via `AsyncPostgresSaver` are partitioned by `thread_id`. Users cannot access or overwrite state belonging to another tenant.
+- **Observability Audit Trail:** The `RunnableConfig` tags all LangGraph executions and Langfuse traces with the authenticated user context:
+  ```python
+  thread_config = get_runnable_config(
+      thread_id=thread_id,
+      metadata={"user_id": current_user.id, "email": current_user.email},
+  )
+  ```
+
+##### 2. Agent Middleware Execution Suite (`app/middleware/`)
+Every guarded path passes through the middleware pipeline before invoking LLMs or external tools:
+- **`RateLimitMiddleware`:** Tracks request timestamps per `user_id` using an in-memory sliding window (60 requests/60s). It also maintains an error budget; 3 consecutive agent execution failures trigger an immediate circuit-breaker timeout.
+- **`PIIMiddleware`:** Scans user inputs and intermediate state values for emails, phone numbers, Social Security Numbers (SSNs), credit cards, and Protected Health Information (MRN/PHI), replacing them with sanitized tokens (`[REDACTED_EMAIL]`, `[MASKED_SSN]`) before LLM reasoning.
+- **`HumanInTheLoopMiddleware`:** Intercepts sensitive or destructive tool invocations, pausing graph execution via LangGraph's `interrupt()` primitive until explicit administrative approval is provided.
+- **`SummarizationMiddleware`:** Monitors cumulative token counts and message history lengths (`trigger=[("tokens", 1200), ("messages", 8)]`), automatically condensing older dialog turns into a concise executive summary.
+
+---
+
+#### E. WebSocket Handshake & Streaming Authentication (`app/api/v1/endpoints/websocket.py`)
+
+Because standard browser WebSocket APIs cannot send custom HTTP authorization headers during the initial handshake, the gateway implements a specialized handshake protocol:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Browser WebSocket Client (new WebSocket)
+    participant Gateway as WebSocket Gateway (app/api/v1/endpoints/websocket.py)
+    participant Security as Security & AuthDB (pyjwt & psycopg==3.3.4)
+    participant LangGraph as LangGraph Execution Engine (astream_events)
+    participant Checkpointer as AsyncPostgresSaver (agent_db)
+
+    Client->>Gateway: WS Handshake: ws://localhost:8000/ws/interact?token=<JWT>
+    Gateway->>Security: authenticate_websocket(websocket)
+    Note over Gateway,Security: Extract token from websocket.query_params.get("token")
+    Security->>Security: pyjwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'])
+    Security->>Security: psycopg: SELECT 1 FROM token_blacklist WHERE token_jti = %s
+    Security->>Security: psycopg: SELECT * FROM users WHERE email = %s (assert is_active)
+
+    alt Validation Fails or Token Missing/Revoked
+        Gateway-->>Client: websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
+    else Validation Passes
+        Gateway-->>Client: await websocket.accept() (101 Switching Protocols)
+        Gateway->>Client: websocket.send_json({"type": "thread_id", "thread_id": "user-uuid..."})
+        
+        loop Bi-directional Streaming Interaction
+            Client->>Gateway: websocket.receive_text() -> json.loads() {"action": "start" | "resume", "user_input": "..."}
+            Gateway->>LangGraph: astream_events(inputs, config=thread_config, version="v2")
+            LangGraph<->Checkpointer: AsyncPostgresSaver: persist state snapshots in agent_db
+            LangGraph-->>Gateway: Yield real-time model tokens and stage execution hints
+            Gateway-->>Client: websocket.send_json({"type": "token", "token": "..."})
+        end
+    end
+```
+
+1. **Handshake Extraction:** The client connects with `ws://localhost:8000/ws/interact?token=<jwt_access_token>`. The gateway inspects `websocket.query_params["token"]` (falling back to `websocket.headers["authorization"]`).
+2. **Pre-Acceptance Verification:** Before calling `websocket.accept()`, the server decodes the token, checks the `token_blacklist` table in `auth_db`, and confirms the user account is active.
+3. **Policy Violation Rejection:** If authentication fails, the server closes the connection immediately with status `1008 Policy Violation`, preventing unauthenticated socket connections from consuming server resources.
+4. **Bidirectional State Streaming:** Once connected, the client sends structured JSON commands (`start`, `resume`). Real-time tokens and node execution hints stream back over the established full-duplex connection.
+
+---
+
+#### F. Comprehensive Execution Path & Technical Component Matrix
+
+The table below details every request path through the system, the security dependencies applied, the databases accessed, and the runtime components involved:
+
+| Request Path & Method | Protocol | Auth & Security Dependency | Databases Involved | Middleware Executed | Execution Engine / Runtime | Resulting Artifact & Response |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **`POST /auth/signup`** | HTTP REST | Public (None) | `auth_db` (`users`) | None | Argon2id Password Hasher | `UserResponse` JSON (201 Created) |
+| **`POST /auth/login`** | HTTP REST | Public (Form/JSON parser) | `auth_db` (`users`) | None | PyJWT Token Minting | `TokenResponse` with Bearer JWT |
+| **`POST /auth/logout`** | HTTP REST | `Depends(get_current_active_user)` | `auth_db` (`token_blacklist`) | None | JTI Blacklist Ingestion | `MessageResponse` confirmation |
+| **`POST /auth/forgot-password`** | HTTP REST | Public (None) | `auth_db` (`password_reset_tokens`) | None | SHA-256 Token Generation | Cryptographic reset token |
+| **`POST /auth/reset-password`** | HTTP REST | Public (Reset Token) | `auth_db` (`users`, `password_reset_tokens`) | None | Argon2id Hash & Token Invalidation | `MessageResponse` confirmation |
+| **`POST /interact`** | HTTP SSE | `Depends(get_current_active_user)` | `auth_db` (Auth), `agent_db` (Checkpoints) | RateLimit, PII, HITL, Summarizer | LangGraph Policy StateGraph | SSE stream (`text/event-stream`) |
+| **`GET /thread/{id}/state`** | HTTP REST | `Depends(get_current_active_user)` | `agent_db` (`checkpoints`) | None | `AsyncPostgresSaver.aget_state` | `GraphStateResponse` JSON |
+| **`DELETE /delete_thread`** | HTTP REST | `Depends(get_current_active_user)` | `agent_db` (`checkpoints`) | None | Checkpoint Deletion | `DeleteThreadResponse` JSON |
+| **`POST /research/run`** | HTTP REST | `Depends(get_current_active_user)` | `auth_db` (Auth), `agent_db` (State) | RateLimit, PII | Parallel Research (`defer=True`) | `ResearchResponse` JSON |
+| **`POST /research/stream`** | HTTP SSE | `Depends(get_current_active_user)` | `auth_db` (Auth), `agent_db` (State) | RateLimit, PII | Parallel Research (`defer=True`) | SSE stream (`text/event-stream`) |
+| **`GET /mcp/tools`** | HTTP REST | `Depends(get_current_active_user)` | `auth_db` (Auth) | None | `MCPClientManager.get_server_status()` | `MCPToolsListResponse` JSON |
+| **`POST /mcp/run`** | HTTP REST | `Depends(get_current_active_user)` | `auth_db` (Auth) | RateLimit, PII | Pinecone/Airbnb MCP stdio Workers | `MCPResponse` JSON |
+| **`POST /mcp/stream`** | HTTP SSE | `Depends(get_current_active_user)` | `auth_db` (Auth) | RateLimit, PII | Pinecone/Airbnb MCP stdio Workers | SSE stream (`text/event-stream`) |
+| **`POST /generic_chat`** | HTTP REST | `Depends(get_current_active_user)` | `auth_db` (Auth), `agent_db` (`chat_history`) | RateLimit, PII, Summarizer | `PostgresChatMessageHistory` + Groq | `ChatResponse` JSON |
+| **`DELETE /delete_session`** | HTTP REST | `Depends(get_current_active_user)` | `agent_db` (`chat_history`) | None | Session Message Eviction | `DeleteSessionResponse` JSON |
+| **`POST /get_sql_query`** | HTTP REST | `Depends(get_current_active_user)` | `auth_db` (Auth), `agent_db` (SQL Schema) | RateLimit, PII, HITL | `create_sql_agent` (SQLDatabaseToolkit) | `SQLQueryResponse` JSON + Data Table |
+| **`WS /ws/interact`** | WebSocket | Query Param `?token=` Handshake | `auth_db` (Auth), `agent_db` (Checkpoints) | RateLimit, PII, HITL | Bi-directional LangGraph Runner | Full-duplex JSON streaming frames |
+
+---
+
+#### G. Technology Stack, Specific Packages & Architectural Roles
+
+Every stage of the authentication, authorization, database persistence, and agent execution lifecycle is powered by battle-tested, specialized open-source libraries:
+
+##### 1. FastAPI & ASGI Gateway Layer
+- **`fastapi` (`fastapi==0.141.1`)**: Core async framework providing high-throughput endpoint routing, OpenAPI / Swagger documentation generation, dependency injection, and declarative request/response validation.
+- **`starlette` (`starlette==1.6.0`)**: Low-level ASGI toolkit underlying FastAPI, providing base classes for `Request`, `Response`, `StreamingResponse`, and `WebSocket`.
+- **`uvicorn` (`uvicorn==0.52.4`) + `uvloop` (`uvloop==0.22.1`) + `httptools` (`httptools==0.8.0`)**: Production ASGI server stack utilizing the C-based Linux epoll event loop (`uvloop`) and high-speed C HTTP parser (`httptools`) for microsecond-level request dispatch.
+- **`fastapi.security.OAuth2PasswordBearer`**: Native security scheme that extracts the bearer token from the `Authorization: Bearer <token>` HTTP header and automatically configures interactive Bearer authentication in Swagger UI (`/docs`).
+- **`python-multipart` (`python-multipart==0.0.32`)**: Streaming parser for `application/x-www-form-urlencoded` and multipart form requests, enabling native OAuth2 password grant form handling on `/auth/login`.
+- **`fastapi.middleware.cors.CORSMiddleware`**: Intercepts preflight `OPTIONS` requests, verifies origin whitelisting against `settings.CORS_ORIGINS`, and injects appropriate `Access-Control-Allow-*` headers.
+- **`fastapi.responses.StreamingResponse`**: Manages chunked Server-Sent Events (SSE) data streams (`media_type="text/event-stream"`), streaming real-time LLM token chunks and dynamic agent progress hints without buffering.
+- **`fastapi.WebSocket` & `fastapi.WebSocketDisconnect`**: Manages the bi-directional TCP socket lifecycle, supporting connection upgrade, query-token authorization, policy violation closing (`WS_1008_POLICY_VIOLATION`), and real-time frame distribution.
+
+##### 2. Authentication, Cryptography & Security Layer
+- **`pwdlib` (`pwdlib==0.3.1`) & `argon2-cffi` (`argon2-cffi==25.1.0`)**:
+  - **Algorithm**: `PasswordHash.recommended()` configures **Argon2id** (the PHC winner and OWASP #1 recommended password hash).
+  - **Parameters**: Salted hash with memory-hardness ($m=65536$, $t=3$, $p=4$) preventing GPU, ASIC, and rainbow table brute-force attacks.
+  - **Immunity**: Constant-time verification (`password_hasher.verify()`) protects against side-channel timing attacks.
+- **`pyjwt` (`pyjwt==2.13.0`)**:
+  - **Token Engine**: Signs and decodes JSON Web Tokens using cryptographic HMAC-SHA256 (`HS256`) against `settings.JWT_SECRET_KEY`.
+  - **Claims Verification**: Emits and validates standard RFC 7519 claims: `sub` (email), `user_id` (UUID), `role`, `iat` (issued at), `exp` (60m access expiry, 15m reset expiry), `jti` (unique token ID), and `token_type`.
+  - **Tamper Protection**: Detects token tampering, invalid signatures (`InvalidTokenError`), and expired tokens (`ExpiredSignatureError`).
+- **`hashlib` (Python Standard Library)**:
+  - Computes SHA-256 digests (`hashlib.sha256(token.encode()).hexdigest()`) of password reset tokens before storing them in `password_reset_tokens` in `auth_db`. Plaintext reset tokens are never persisted, preventing credential compromise even if the database is leaked.
+- **`uuid` (Python Standard Library)**:
+  - Generates cryptographically isolated UUID v4 identifiers for user primary keys (`gen_random_uuid()`), unique `jti` token fingerprints, and tenant thread namespaces (`user-{id}-{uuid}`).
+
+##### 3. Database Driver, Connection Pooling & Checkpointing Layer
+- **`psycopg` (`psycopg==3.3.4`) & `psycopg-binary`**:
+  - Modern, native asynchronous PostgreSQL 3 driver utilizing Python's `async/await` syntax.
+  - **SQL Injection Prevention**: Parameterized query execution using `%s` placeholders for all dynamic inputs across user lookups, token insertions, and blacklist queries.
+  - **Row Factory**: Configured with `row_factory=dict_row` to automatically convert SQL result tuples into native Python dictionaries keyed by column name.
+- **`psycopg-pool` (`psycopg-pool==3.3.1`)**:
+  - `AsyncConnectionPool`: Maintains high-performance connection pools for both `auth_db` and `agent_db` (`min_size=2`, `max_size=10`). Reuses pre-established TCP database connections and eliminates connection handshake latency on every request.
+- **`langgraph-checkpoint-postgres` (`langgraph-checkpoint-postgres==3.1.2`)**:
+  - `AsyncPostgresSaver`: Implements persistent distributed checkpointing for LangGraph StateGraphs. Checkpoints thread states, node outputs, and channels directly into PostgreSQL, enabling state hydration, graph rollback, and human-in-the-loop resumes.
+- **`langchain-postgres` (`langchain-postgres==0.0.17`)**:
+  - `PostgresChatMessageHistory`: Manages conversational memory persistence in PostgreSQL for generic chat sessions, persisting user and assistant messages across server restarts.
+
+##### 4. Data Validation, Configuration & Schema Modeling Layer
+- **`pydantic` (`pydantic==2.13.4`) & `pydantic-core` (`pydantic-core==2.46.4`)**:
+  - Rust-backed high-speed data validation and serialization.
+  - Validates request schemas (`UserSignupRequest`, `InteractionRequest`, `ResearchRequest`, `SQLQueryRequest`) and serializes response schemas (`UserResponse`, `TokenResponse`, etc.).
+  - Enforces structured JSON output parsing for the classifier agent via `PydanticOutputParser`.
+- **`pydantic-settings` (`pydantic-settings==2.15.0`)**:
+  - `BaseSettings`: Strongly typed configuration engine reading environment variables from `.env`, enforcing type constraints, and setting production defaults.
+
+##### 5. Agent Middleware, LLM Runtimes & Observability Layer
+- **`langgraph` (`langgraph==1.2.2`)**:
+  - Stateful multi-agent orchestration framework supporting cyclical graphs, parallel branches with synchronization joins (`defer=True`), and Human-in-the-Loop interrupts (`interrupt()`).
+- **`langfuse` (`langfuse==4.14.4`)**:
+  - Production observability engine providing non-blocking OpenTelemetry traces, latency analysis, token consumption tracking, and session debugging via `langfuse.callback.CallbackHandler`.
+- **`langchain-mcp-adapters` (`langchain-mcp-adapters==0.3.1`) & `mcp` (`mcp==1.29.0`)**:
+  - Standardized Model Context Protocol (MCP) client running stdio subprocesses (`npx @openbnb/mcp-server-airbnb`, `@pinecone-database/mcp`).
+- **`langchain-groq` (`langchain-groq==1.1.3`) & `groq` (`groq==0.37.1`)**:
+  - Ultra-low latency LPU inference client running open models (`openai/gpt-oss-120b`).
+- **`tiktoken` (`tiktoken==0.14.0`)**:
+  - Fast BPE token counting used by `SummarizationMiddleware` to enforce token budget boundaries.
+- **`duckduckgo-search` (`duckduckgo-search==8.1.1`)**:
+  - Real-time zero-configuration live search engine integration for researcher dispatchers.
 
 ---
 
