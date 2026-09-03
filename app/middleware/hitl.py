@@ -39,7 +39,7 @@ class HumanInTheLoopMiddleware(AgentMiddleware):
         self.sensitive_tools: Set[str] = set(sensitive_tools or [
             "execute_sql_mutation",
             "modify_database",
-            "submit_fda_filing",
+            "submit_compliance_audit",
             "delete_records",
             "override_inventory",
         ])

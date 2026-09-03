@@ -1,4 +1,4 @@
-"""Node: Regulatory and Decision-Tree Reasoning LLM."""
+"""Node: Policy and Architecture Decision-Tree Reasoning LLM."""
 
 import logging
 from typing import Any, Dict, Optional
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class ReasonLLMNode(BaseGraphNode):
-    """Generates authoritative FDA regulatory advice and pathway recommendations."""
+    """Generates authoritative system architecture, policy, and compliance recommendations."""
 
     name: str = "reason_llm"
 
@@ -28,14 +28,14 @@ class ReasonLLMNode(BaseGraphNode):
         chat_history = state.get("chat_history") or []
 
         system_prompt = (
-            "You are an authoritative FDA & Medical Device Regulatory Expert. "
-            "Analyze the user's decision pathway, device specifications, and regulatory context to provide "
-            "a precise, step-by-step recommendation on the appropriate FDA submission pathway (510(k), PMA, De Novo, or Exemption).\n\n"
+            "You are an authoritative Enterprise Architecture, Policy & Standards Expert. "
+            "Analyze the user's decision pathway, system specifications, and architecture context to provide "
+            "a precise, step-by-step recommendation on the appropriate compliance pathway (Tier 1 Standard, Tier 2 Verification, Tier 3 Comprehensive Audit, or Custom Pathway).\n\n"
             f"Context Documents:\n{context_docs}\n\n"
             f"User Configured Pathway & Decisions:\n{user_decisions}\n"
         )
 
-        user_query = feedback if feedback else "Please evaluate my current medical device regulatory pathway and suggest next steps."
+        user_query = feedback if feedback else "Please evaluate my current system architecture pathway and suggest next steps."
 
         messages = [
             SystemMessage(content=system_prompt),
@@ -47,9 +47,9 @@ class ReasonLLMNode(BaseGraphNode):
         from app.middleware import default_agent_pipeline
         state, messages = await default_agent_pipeline.run_before_model(state, messages)
 
-        # Tag the invocation with "RegulatoryExpert" for SSE/WebSocket token streaming
+        # Tag the invocation with "PolicyExpert" for SSE/WebSocket token streaming
         config = {
-            "tags": ["llm", "RegulatoryExpert"],
+            "tags": ["llm", "PolicyExpert"],
             "metadata": {"node": self.name},
         }
 

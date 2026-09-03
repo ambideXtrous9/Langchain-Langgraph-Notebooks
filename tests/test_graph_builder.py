@@ -14,23 +14,23 @@ def test_routing_logic():
     # 2. Generic chit-chat -> 'feedbackloop'
     assert decide_start_node({"classification": {"classification": "generic"}}) == "feedbackloop"
 
-    # 3. FDA topic with device data -> 'device'
+    # 3. Policy topic with system data -> 'device'
     assert (
         decide_start_node(
             {
-                "classification": {"classification": "fda"},
+                "classification": {"classification": "policy"},
                 "useDeviceData": True,
-                "userProvidedDeiveceData": "Laser scalpel model X",
+                "userProvidedDeiveceData": "Kafka streaming model X",
             }
         )
         == "device"
     )
 
-    # 4. FDA topic without device data -> 'knowledge'
+    # 4. Policy topic without system data -> 'knowledge'
     assert (
         decide_start_node(
             {
-                "classification": {"classification": "fda"},
+                "classification": {"classification": "policy"},
                 "useDeviceData": False,
                 "userProvidedDeiveceData": "",
             }

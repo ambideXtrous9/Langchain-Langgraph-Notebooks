@@ -1,5 +1,5 @@
 /**
- * RP360 // LangGraph Enterprise Agent Architecture
+ * AgentSphere // LangGraph Enterprise Agent Architecture
  * Application Configuration & LocalStorage Keys
  */
 
@@ -8,13 +8,13 @@ export const CONFIG = {
   DEFAULT_API_BASE: "http://localhost:8000",
     
   STORAGE_KEYS: {
-    API_BASE: "rp360_api_base",
-    AUTH_TOKEN: "rp360_jwt_token",
-    USER_PROFILE: "rp360_user_profile",
-    ACTIVE_TAB: "rp360_active_tab",
-    CHAT_SESSION_ID: "rp360_chat_session_id",
-    RECENT_SESSIONS: "rp360_recent_sessions",
-    LAST_THREAD_ID: "rp360_last_thread_id",
+    API_BASE: "agentsphere_api_base",
+    AUTH_TOKEN: "agentsphere_jwt_token",
+    USER_PROFILE: "agentsphere_user_profile",
+    ACTIVE_TAB: "agentsphere_active_tab",
+    CHAT_SESSION_ID: "agentsphere_chat_session_id",
+    RECENT_SESSIONS: "agentsphere_recent_sessions",
+    LAST_THREAD_ID: "agentsphere_last_thread_id",
   },
 
   ENDPOINTS: {
@@ -31,7 +31,7 @@ export const CONFIG = {
     FORGOT_PASSWORD: "/auth/forgot-password",
     RESET_PASSWORD: "/auth/reset-password",
     
-    // Regulatory Decision Graph
+    // Policy Decision Graph
     INTERACT: "/interact",
     THREAD_STATE: (threadId) => `/thread/${threadId}/state`,
     DELETE_THREAD: "/delete_thread",

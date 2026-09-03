@@ -83,7 +83,7 @@ async def stream_research_events(
                     words = len(output.get("draft", "").split())
                     hint_msg = f"Synthesized initial {words}-word report draft for '{topic[:40]}...'"
                 elif node_name == "fact_critic":
-                    hint_msg = f"Fact Critic audited regulatory claims and source citations for '{topic[:40]}...'"
+                    hint_msg = f"Fact Critic audited technical claims and source citations for '{topic[:40]}...'"
                 elif node_name == "style_critic_1":
                     hint_msg = f"Style Critic 1 optimized narrative clarity and voice for '{topic[:40]}...'"
                 elif node_name == "style_critic_2":
@@ -106,7 +106,7 @@ async def stream_research_events(
                     query_param = tool_input
 
                 query_disp = f" for '{query_param[:45]}...'" if query_param else f" for topic '{topic[:35]}...'"
-                tool_hint = f"Web Intelligence Tool [{tool_name}]: Searching live regulatory briefings{query_disp}..."
+                tool_hint = f"Web Intelligence Tool [{tool_name}]: Searching live policy briefings{query_disp}..."
                 yield f"data: {json.dumps({'event': 'tool_start', 'tool': tool_name, 'data': tool_hint})}\n\n"
 
             # 2d. Dynamic Tool Execution End Hints

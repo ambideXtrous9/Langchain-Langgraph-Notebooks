@@ -1,5 +1,5 @@
 /**
- * RP360 // System Topology, Health Metrics & Interactive Mermaid Flowcharts
+ * AgentSphere // System Topology, Health Metrics & Interactive Mermaid Flowcharts
  * Connects to /health, /graph/mermaid, /research/mermaid, /mcp/travel/mermaid.
  */
 
@@ -8,7 +8,7 @@ import { CONFIG } from "./config.js";
 
 class TopologyController {
   constructor() {
-    this.activeGraphType = "regulatory"; // 'regulatory' | 'research' | 'mcp'
+    this.activeGraphType = "policy"; // 'policy' | 'research' | 'mcp'
     this.mermaidSource = "";
   }
 
@@ -52,7 +52,7 @@ class TopologyController {
       copyDslBtn.addEventListener("click", () => {
         if (this.mermaidSource) {
           navigator.clipboard.writeText(this.mermaidSource);
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: "Mermaid DSL copied to clipboard.", type: "success" }
           }));
         }
@@ -92,7 +92,7 @@ class TopologyController {
     }
   }
 
-  async loadGraphMermaid(type = "regulatory") {
+  async loadGraphMermaid(type = "policy") {
     const renderBox = document.getElementById("topology-mermaid-render");
     const dslCode = document.getElementById("topology-dsl-code");
     if (!renderBox) return;
@@ -102,12 +102,12 @@ class TopologyController {
     let dsl = "";
 
     try {
-      if (type === "regulatory") {
+      if (type === "policy" || type === "decision_tree") {
         dsl = await api.request(CONFIG.ENDPOINTS.GRAPH_MERMAID, { includeAuth: false });
       } else if (type === "research") {
         dsl = await api.request(CONFIG.ENDPOINTS.RESEARCH_MERMAID, { includeAuth: false });
       } else if (type === "mcp") {
-        const mode = localStorage.getItem("rp360_mcp_mode") || "harry_potter";
+        const mode = localStorage.getItem("agentsphere_mcp_mode") || "harry_potter";
         dsl = await api.request(`${CONFIG.ENDPOINTS.MCP_MERMAID}?mode=${mode}`, { includeAuth: false });
       } else if (type === "sql") {
         dsl = `flowchart TD

@@ -103,6 +103,8 @@ class Settings(BaseSettings):
     PINECONE_API_KEY: str = Field(default="", description="Pinecone API Key")
     PINECONE_MCP_COMMAND: str = "npx"
     PINECONE_MCP_ARGS: Union[List[str], str] = ["-y", "@pinecone-database/mcp"]
+    QDRANT_ENDPOINT: str = Field(default="", description="Qdrant Vector DB Endpoint")
+    QDRANT_API_KEY: str = Field(default="", description="Qdrant API Key")
     WEATHER_API_KEY: str = Field(default="", description="WeatherAPI.com API Key")
     AIRBNB_AGENT_MAX_TOKENS: int = 4096
     HP_AGENT_MAX_TOKENS: int = 4096

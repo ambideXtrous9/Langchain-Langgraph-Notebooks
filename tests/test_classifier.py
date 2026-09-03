@@ -8,10 +8,10 @@ from app.schemas.state import Classify
 @pytest.mark.asyncio
 async def test_classifier_pydantic_schema():
     """Tests Pydantic model validation on Classify output."""
-    valid_data = {"classification": "fda", "reply": "FDA"}
+    valid_data = {"classification": "policy", "reply": "POLICY"}
     obj = Classify(**valid_data)
-    assert obj.classification == "fda"
-    assert obj.reply == "FDA"
+    assert obj.classification == "policy"
+    assert obj.reply == "POLICY"
 
 
 @pytest.mark.asyncio
@@ -23,8 +23,8 @@ async def test_classifier_rule_fallback():
     assert exit_res["classification"] == "exit"
     assert exit_res["reply"] == "exit"
 
-    fda_res = await classifier.aclassify("What is the 510k decision path for a catheter device?")
-    assert fda_res["classification"] == "fda"
+    policy_res = await classifier.aclassify("What is the compliance benchmark path for an enterprise data pipeline?")
+    assert policy_res["classification"] == "policy"
 
     generic_res = await classifier.aclassify("Hello, good morning!")
     assert generic_res["classification"] == "generic"

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class ClassifyNode(BaseGraphNode):
-    """Classifies user input or current topic into 'generic', 'fda', or 'exit'."""
+    """Classifies user input or current topic into 'generic', 'policy', or 'exit'."""
 
     name: str = "classify_node"
 

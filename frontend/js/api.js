@@ -1,5 +1,5 @@
 /**
- * RP360 // API Client & Stream Connection Manager
+ * AgentSphere // API Client & Stream Connection Manager
  * Handles HTTP requests, OAuth2 Bearer Tokens, Server-Sent Events (SSE), and WebSockets.
  */
 
@@ -63,7 +63,7 @@ class ApiClient {
 
       // Handle 401 Unauthorized (Expired or Revoked Token)
       if (response.status === 401 && includeAuth) {
-        window.dispatchEvent(new CustomEvent("rp360:auth_expired", { detail: { status: 401 } }));
+        window.dispatchEvent(new CustomEvent("agentsphere:auth_expired", { detail: { status: 401 } }));
       }
 
       // Handle non-JSON response types (like Mermaid PlainText)
@@ -178,7 +178,9 @@ class ApiClient {
     const baseUrl = getApiBase();
     const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
     const host = baseUrl.replace(/^https?:\/\//, "");
-    const wsUrl = `${wsProto}//${host}${endpoint}`;
+    const token = this.getToken();
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+    const wsUrl = `${wsProto}//${host}${endpoint}${tokenParam}`;
 
     const ws = new WebSocket(wsUrl);
 

@@ -1,5 +1,5 @@
 /**
- * RP360 // ChatGPT-style Multi-Agent Conversation Controller
+ * AgentSphere // Multi-Agent Conversation Controller
  * Handles conversation sessions, multi-agent dispatching, SSE/WebSocket streaming,
  * dynamic thinking accordions, and Human-in-the-Loop interrupt resolution.
  */
@@ -10,7 +10,7 @@ import { AGENTS } from "./agents.js";
 
 class ChatPlatformController {
   constructor() {
-    this.activeAgentId = "regulatory";
+    this.activeAgentId = "policy";
     this.activeSessionId = null;
     this.sessions = [];
     this.isStreaming = false;
@@ -36,7 +36,7 @@ class ChatPlatformController {
 
   loadSessions() {
     try {
-      const stored = localStorage.getItem("rp360_chat_sessions_v2");
+      const stored = localStorage.getItem("agentsphere_chat_sessions_v2");
       this.sessions = stored ? JSON.parse(stored) : [];
     } catch (e) {
       this.sessions = [];
@@ -44,7 +44,7 @@ class ChatPlatformController {
   }
 
   saveSessions() {
-    localStorage.setItem("rp360_chat_sessions_v2", JSON.stringify(this.sessions));
+    localStorage.setItem("agentsphere_chat_sessions_v2", JSON.stringify(this.sessions));
     this.renderSidebarHistory();
   }
 
@@ -52,7 +52,7 @@ class ChatPlatformController {
     return this.sessions.find(s => s.id === this.activeSessionId);
   }
 
-  createNewSession(agentId = "regulatory") {
+  createNewSession(agentId = "policy") {
     const session = {
       id: "sess_" + Math.random().toString(36).substring(2, 9) + "_" + Date.now().toString(36),
       agentId: agentId,
@@ -72,7 +72,7 @@ class ChatPlatformController {
     const session = this.getActiveSession();
     if (!session) return;
 
-    this.activeAgentId = session.agentId || "regulatory";
+    this.activeAgentId = session.agentId || "policy";
     this.activeThreadId = session.threadId || null;
 
     this.renderActiveAgentUI();
@@ -140,7 +140,7 @@ class ChatPlatformController {
       }
     }
 
-    window.dispatchEvent(new CustomEvent("rp360:notify", {
+    window.dispatchEvent(new CustomEvent("agentsphere:notify", {
       detail: { message: "Conversation & PostgreSQL checkpoints deleted.", type: "info" }
     }));
   }
@@ -164,7 +164,7 @@ class ChatPlatformController {
     if (!AGENTS.mcp || !AGENTS.mcp.modes || !AGENTS.mcp.modes[targetMode]) return;
 
     AGENTS.mcp.activeMode = targetMode;
-    localStorage.setItem("rp360_mcp_mode", targetMode);
+    localStorage.setItem("agentsphere_mcp_mode", targetMode);
 
     const cfg = AGENTS.mcp.currentModeConfig;
 
@@ -187,9 +187,16 @@ class ChatPlatformController {
 
     const selectEl = document.getElementById("mcp-mode-select");
     const iconEl = document.getElementById("mcp-select-icon");
+    const labelEl = document.getElementById("mcp-mode-label");
 
     if (selectEl) selectEl.value = targetMode;
     if (iconEl) iconEl.textContent = targetMode === "harry_potter" ? "⚡" : "🏨";
+    if (labelEl) labelEl.textContent = targetMode === "harry_potter" ? "Harry Potter Lore QA" : "Airbnb Travel Search";
+
+    document.querySelectorAll(".mcp-option").forEach(opt => {
+      const optMode = opt.getAttribute("data-mcp-option");
+      opt.classList.toggle("is-selected", optMode === targetMode);
+    });
 
     // 3. Re-render empty state / suggestion cards if session has no messages
     const session = this.getActiveSession();
@@ -206,7 +213,7 @@ class ChatPlatformController {
       this.openFlowchartDrawer();
     }
 
-    window.dispatchEvent(new CustomEvent("rp360:notify", {
+    window.dispatchEvent(new CustomEvent("agentsphere:notify", {
       detail: {
         message: targetMode === "harry_potter"
           ? "Switched to Harry Potter Universe QA (Pinecone MCP)"
@@ -217,7 +224,7 @@ class ChatPlatformController {
   }
 
   renderActiveAgentUI() {
-    const agent = AGENTS[this.activeAgentId] || AGENTS.regulatory;
+    const agent = AGENTS[this.activeAgentId] || AGENTS.policy;
 
     // Navbar dropdown
     const nameEl = document.getElementById("active-agent-name");
@@ -235,12 +242,34 @@ class ChatPlatformController {
         mcpDropdown.style.display = "inline-flex";
         const selectEl = document.getElementById("mcp-mode-select");
         const iconEl = document.getElementById("mcp-select-icon");
+        const labelEl = document.getElementById("mcp-mode-label");
         if (selectEl) selectEl.value = mode;
         if (iconEl) iconEl.textContent = mode === "harry_potter" ? "⚡" : "🏨";
+        if (labelEl) labelEl.textContent = mode === "harry_potter" ? "Harry Potter Lore QA" : "Airbnb Travel Search";
+
+        document.querySelectorAll(".mcp-option").forEach(opt => {
+          const optMode = opt.getAttribute("data-mcp-option");
+          opt.classList.toggle("is-selected", optMode === mode);
+        });
       }
     } else {
       if (badgeEl) badgeEl.innerHTML = agent.badge;
       if (mcpDropdown) mcpDropdown.style.display = "none";
+    }
+
+    // Configure Parameters Button: Only display/enable for agents that require parameter inputs (e.g. Policy Navigator)
+    const configBtn = document.getElementById("btn-agent-config");
+    if (configBtn) {
+      const hasConfigurableParams = Boolean(agent.hasParams || (agent.params && Object.keys(agent.params).length > 0));
+      configBtn.style.display = hasConfigurableParams ? "inline-flex" : "none";
+      if (hasConfigurableParams) {
+        configBtn.title = `Configure ${agent.name} Parameters`;
+      }
+    }
+
+    const configModal = document.getElementById("agent-config-modal");
+    if (configModal && (!agent.hasParams && (!agent.params || Object.keys(agent.params).length === 0)) && configModal.classList.contains("is-open")) {
+      configModal.classList.remove("is-open");
     }
 
     // Sidebar items active state
@@ -290,14 +319,26 @@ class ChatPlatformController {
     const container = document.getElementById("chat-params-container");
     if (!container) return;
 
-    if (agent.id === "regulatory") {
+    if (agent.id === "policy") {
+      const p = AGENTS.policy?.params || {};
+      const tier = p.system_tier ? p.system_tier.split(" ")[0] + " " + (p.system_tier.split(" ")[1] || "") : "Tier 2";
+      const autoStatus = p.is_autonomous ? "Autonomous: ON" : "Autonomous: OFF";
       container.style.display = "flex";
       container.innerHTML = `
-        <span class="param-pill is-active" id="chip-param-class" title="Device Class">Class II (510k)</span>
-        <span class="param-pill is-active" id="chip-param-samd" title="Software as Medical Device">SaMD: ON</span>
+        <span class="param-pill is-active" id="chip-param-class" title="System Tier">${tier}</span>
+        <span class="param-pill is-active" id="chip-param-auto" title="Autonomous AI / Cloud Engine">${autoStatus}</span>
         <span class="param-pill" id="chip-param-config" title="Open Agent Configuration Modal">⚙ Parameters</span>
       `;
       document.getElementById("chip-param-config")?.addEventListener("click", () => {
+        const p = AGENTS.policy?.params || {};
+        const devClassEl = document.getElementById("cfg-device-class");
+        const predicateEl = document.getElementById("cfg-predicate");
+        const autoEl = document.getElementById("cfg-autonomous");
+        const specsEl = document.getElementById("cfg-specs");
+        if (devClassEl && (p.system_tier || p.device_class)) devClassEl.value = p.system_tier || p.device_class;
+        if (predicateEl) predicateEl.value = p.reference_standard || p.predicate_device || "";
+        if (autoEl) autoEl.checked = Boolean(p.is_autonomous);
+        if (specsEl) specsEl.value = p.system_specs || p.device_specs || "";
         document.getElementById("agent-config-modal")?.classList.add("is-open");
       });
     } else if (agent.id === "research") {
@@ -337,7 +378,7 @@ class ChatPlatformController {
 
     list.innerHTML = this.sessions.map(s => {
       const isActive = s.id === this.activeSessionId;
-      const agent = AGENTS[s.agentId] || AGENTS.regulatory;
+      const agent = AGENTS[s.agentId] || AGENTS.policy;
       return `
         <div class="history-item ${isActive ? 'is-active' : ''}" data-session-id="${s.id}">
           <div class="history-item-title" title="${s.title}">
@@ -374,7 +415,7 @@ class ChatPlatformController {
       return;
     }
 
-    const agent = AGENTS[session.agentId] || AGENTS.regulatory;
+    const agent = AGENTS[session.agentId] || AGENTS.policy;
 
     let html = "";
     session.messages.forEach((msg, idx) => {
@@ -443,7 +484,7 @@ class ChatPlatformController {
     const container = document.getElementById("chat-scroll-content");
     if (!container) return;
 
-    const agent = AGENTS[this.activeAgentId] || AGENTS.regulatory;
+    const agent = AGENTS[this.activeAgentId] || AGENTS.policy;
 
     if (this.activeAgentId === "mcp") {
       const cfg = agent.currentModeConfig;
@@ -541,9 +582,9 @@ class ChatPlatformController {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8c5800" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
           Human-in-the-Loop Interruption Active
         </div>
-        <p style="font-size: 13.5px; color: #5a3e00; margin-bottom: 8px;">${promptText || 'Regulatory pathway generated. Review recommendations or provide modifications:'}</p>
+        <p style="font-size: 13.5px; color: #5a3e00; margin-bottom: 8px;">${promptText || 'Policy pathway generated. Review recommendations or provide modifications:'}</p>
         <div class="chat-hitl-actions">
-          <input type="text" class="field-input" id="hitl-input-${msgIdx}" placeholder="e.g., 'Approve guidance', 'Include predicate K201842', or 'Refine for SaMD'" style="flex: 1; min-width: 220px; font-size: 13.5px; padding: 6px 10px;" />
+          <input type="text" class="field-input" id="hitl-input-${msgIdx}" placeholder="e.g., 'Approve guidance', 'Include benchmark ISO-27001', or 'Refine for autonomous engine'" style="flex: 1; min-width: 220px; font-size: 13.5px; padding: 6px 10px;" />
           <button type="button" class="btn btn-primary btn-sm" data-resume-hitl="${msgIdx}">Resume Graph &rarr;</button>
         </div>
       </div>
@@ -578,7 +619,7 @@ class ChatPlatformController {
         const session = this.getActiveSession();
         if (session && session.messages[idx]) {
           navigator.clipboard.writeText(session.messages[idx].content);
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: "Message copied to clipboard.", type: "success" }
           }));
         }
@@ -603,7 +644,7 @@ class ChatPlatformController {
         const input = document.getElementById(`hitl-input-${idx}`);
         const text = input ? input.value.trim() : "";
         if (!text) {
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: "Please enter feedback or type 'approve' to resume.", type: "error" }
           }));
           return;
@@ -656,14 +697,14 @@ class ChatPlatformController {
     // Dropdown Agent Switcher
     const dropdownBtn = document.getElementById("agent-dropdown-trigger");
     const dropdownMenu = document.getElementById("agent-dropdown-menu");
+    const mcpDropdownBtn = document.getElementById("mcp-dropdown-trigger");
+    const mcpDropdownMenu = document.getElementById("mcp-dropdown-menu");
+
     if (dropdownBtn && dropdownMenu) {
       dropdownBtn.addEventListener("click", (e) => {
         e.stopPropagation();
+        if (mcpDropdownMenu) mcpDropdownMenu.classList.remove("is-open");
         dropdownMenu.classList.toggle("is-open");
-      });
-
-      document.addEventListener("click", () => {
-        dropdownMenu.classList.remove("is-open");
       });
 
       document.querySelectorAll(".agent-option").forEach(opt => {
@@ -675,8 +716,30 @@ class ChatPlatformController {
       });
     }
 
-    // Top Navbar MCP Mode Dropdown Selector
-    // Top Navbar MCP Mode Select Dropdown
+    // Top Navbar MCP Mode Custom Dropdown Selector
+    if (mcpDropdownBtn && mcpDropdownMenu) {
+      mcpDropdownBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (dropdownMenu) dropdownMenu.classList.remove("is-open");
+        mcpDropdownMenu.classList.toggle("is-open");
+      });
+
+      document.querySelectorAll(".mcp-option").forEach(opt => {
+        opt.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const targetMode = opt.getAttribute("data-mcp-option");
+          this.switchMCPMode(targetMode);
+          mcpDropdownMenu.classList.remove("is-open");
+        });
+      });
+    }
+
+    // Close any open navbar dropdowns on outside click
+    document.addEventListener("click", () => {
+      if (dropdownMenu) dropdownMenu.classList.remove("is-open");
+      if (mcpDropdownMenu) mcpDropdownMenu.classList.remove("is-open");
+    });
+
     const mcpSelect = document.getElementById("mcp-mode-select");
     if (mcpSelect) {
       mcpSelect.addEventListener("change", (e) => {
@@ -816,8 +879,8 @@ class ChatPlatformController {
 
     // 3. Dispatch to appropriate Agent
     try {
-      if (this.activeAgentId === "regulatory") {
-        await this.streamRegulatoryAgent(userText, assistantMsgIndex);
+      if (this.activeAgentId === "policy") {
+        await this.streamPolicyAgent(userText, assistantMsgIndex);
       } else if (this.activeAgentId === "research") {
         await this.streamResearchAgent(userText, assistantMsgIndex);
       } else if (this.activeAgentId === "mcp") {
@@ -844,7 +907,7 @@ class ChatPlatformController {
   }
 
   /**
-   * Resume Regulatory HITL from within chat bubble
+   * Resume Policy HITL from within chat bubble
    */
   async resumeHITL(feedbackText, msgIdx) {
     const session = this.getActiveSession();
@@ -878,7 +941,7 @@ class ChatPlatformController {
     this.updateSendButtonState();
 
     try {
-      await this.streamRegulatoryAgent(feedbackText, newIdx, true);
+      await this.streamPolicyAgent(feedbackText, newIdx, true);
     } catch (err) {
       session.messages[newIdx].content += `\n\n**Resume Error:** ${err.message}`;
     } finally {
@@ -893,20 +956,26 @@ class ChatPlatformController {
   // Agent Stream Handlers
   // --------------------------------------------------------------------------
 
-  async streamRegulatoryAgent(userText, msgIdx, isResume = false) {
+  async streamPolicyAgent(userText, msgIdx, isResume = false) {
     this.abortController = new AbortController();
     const session = this.getActiveSession();
     const msg = session.messages[msgIdx];
 
+    const p = AGENTS.policy?.params || {};
     const payload = {
       user_choices: {
-        device_class: "Class II (510k Premarket Notification)",
-        intended_use: "Clinical monitoring",
-        software_as_medical_device: true,
+        system_tier: p.system_tier || "Tier 2 (Advanced Verification Standards)",
+        intended_use: p.intended_use || "Continuous cloud telemetry monitoring and identity verification",
+        reference_standard: p.reference_standard || "",
+        is_autonomous: p.is_autonomous !== undefined ? p.is_autonomous : true,
       },
       user_input: userText,
-      useDeviceData: false,
-      userProvidedDeiveceData: "",
+      useDeviceData: Boolean(p.system_specs),
+      useSystemData: Boolean(p.system_specs),
+      user_provided_system_data: p.system_specs || "",
+      user_provided_spec_data: p.system_specs || "",
+      user_provided_device_data: p.system_specs || "",
+      userProvidedDeiveceData: p.system_specs || "",
       thread_id: this.activeThreadId || undefined,
     };
 
@@ -1204,7 +1273,7 @@ class ChatPlatformController {
     const title = document.getElementById("drawer-agent-title");
     if (!drawer || !container) return;
 
-    const agent = AGENTS[this.activeAgentId] || AGENTS.regulatory;
+    const agent = AGENTS[this.activeAgentId] || AGENTS.policy;
     const mode = this.activeAgentId === "mcp" ? (AGENTS.mcp.activeMode || "harry_potter") : "";
     const modeSuffix = mode === "harry_potter" ? " · Harry Potter QA" : (mode === "airbnb" ? " · Airbnb Search" : "");
     if (title) title.textContent = `${agent.name}${modeSuffix} Flowchart`;
@@ -1215,7 +1284,7 @@ class ChatPlatformController {
     let dsl = "";
 
     try {
-      if (this.activeAgentId === "regulatory") {
+      if (this.activeAgentId === "policy") {
         dsl = await api.request(CONFIG.ENDPOINTS.GRAPH_MERMAID, { includeAuth: false });
       } else if (this.activeAgentId === "research") {
         dsl = await api.request(CONFIG.ENDPOINTS.RESEARCH_MERMAID, { includeAuth: false });
@@ -1260,7 +1329,7 @@ class ChatPlatformController {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `RP360_Table_${Date.now()}.csv`;
+    a.download = `AgentSphere_Table_${Date.now()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -13,49 +13,54 @@ logger = logging.getLogger(__name__)
 
 def create_demo_sqlite_db() -> SQLDatabase:
     """Creates a sample in-memory SQLite database for testing and demonstration."""
-    from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float
+    from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String
+    from sqlalchemy.pool import StaticPool
 
-    engine = create_engine("sqlite:///:memory:")
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     metadata = MetaData()
 
-    # Create sample Medical Devices table
-    devices = Table(
-        "medical_devices",
+    # Create sample Enterprise Systems table
+    systems = Table(
+        "enterprise_systems",
         metadata,
         Column("id", Integer, primary_key=True),
-        Column("device_name", String(100)),
-        Column("device_class", String(20)),
-        Column("fda_approval_year", Integer),
+        Column("system_name", String(100)),
+        Column("system_tier", String(20)),
+        Column("certification_year", Integer),
         Column("risk_level", String(20)),
-        Column("manufacturer", String(100)),
+        Column("vendor", String(100)),
     )
 
     metadata.create_all(engine)
 
     with engine.connect() as conn:
         conn.execute(
-            devices.insert(),
+            systems.insert(),
             [
                 {
-                    "device_name": "CardioPacemaker Pro",
-                    "device_class": "Class III",
-                    "fda_approval_year": 2021,
+                    "system_name": "CloudIdentity Pro",
+                    "system_tier": "Tier 3",
+                    "certification_year": 2021,
                     "risk_level": "High",
-                    "manufacturer": "MedTech Corp",
+                    "vendor": "SecureTech Corp",
                 },
                 {
-                    "device_name": "GlucoTrack Sensor",
-                    "device_class": "Class II",
-                    "fda_approval_year": 2022,
+                    "system_name": "DataPipeline Sensor",
+                    "system_tier": "Tier 2",
+                    "certification_year": 2022,
                     "risk_level": "Moderate",
-                    "manufacturer": "BioSense Inc",
+                    "vendor": "InfraSense Inc",
                 },
                 {
-                    "device_name": "Digital Stethoscope AI",
-                    "device_class": "Class II",
-                    "fda_approval_year": 2023,
+                    "system_name": "Telemetry Gateway AI",
+                    "system_tier": "Tier 2",
+                    "certification_year": 2023,
                     "risk_level": "Low",
-                    "manufacturer": "HealthSound Ltd",
+                    "vendor": "CloudSound Ltd",
                 },
             ],
         )
@@ -64,17 +69,30 @@ def create_demo_sqlite_db() -> SQLDatabase:
     return SQLDatabase(engine)
 
 
+_agent_cache: Dict[str, Any] = {}
+
+
 def load_sql_agent(db_uri: Optional[str] = None, llm: Optional[Any] = None):
     """Loads and compiles the SQL Agent Executor with toolkit."""
+    cache_key = f"{db_uri or settings.effective_db_uri or 'demo'}"
+    if cache_key in _agent_cache:
+        return _agent_cache[cache_key]
+
     if llm is None:
         llm = get_llm(max_tokens=1000)
 
     try:
         if db_uri:
-            db = SQLDatabase.from_uri(db_uri)
+            uri = db_uri
+            if uri.startswith("postgresql://") and "+psycopg" not in uri:
+                uri = uri.replace("postgresql://", "postgresql+psycopg://", 1)
+            db = SQLDatabase.from_uri(uri)
         else:
             try:
-                db = SQLDatabase.from_uri(settings.effective_db_uri)
+                uri = settings.effective_db_uri
+                if uri.startswith("postgresql://") and "+psycopg" not in uri:
+                    uri = uri.replace("postgresql://", "postgresql+psycopg://", 1)
+                db = SQLDatabase.from_uri(uri)
             except Exception:
                 logger.warning("Could not connect to PostgreSQL for SQL Agent. Using demo SQLite database.")
                 db = create_demo_sqlite_db()
@@ -91,6 +109,7 @@ def load_sql_agent(db_uri: Optional[str] = None, llm: Optional[Any] = None):
         agent_type="openai-tools",
         agent_executor_kwargs={"return_intermediate_steps": True},
     )
+    _agent_cache[cache_key] = agent
     return agent
 
 

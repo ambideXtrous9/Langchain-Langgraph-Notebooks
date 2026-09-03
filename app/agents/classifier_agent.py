@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class ClassifierAgent:
-    """Agent that classifies input topics into 'generic', 'fda', or 'exit' with strict Pydantic JSON validation."""
+    """Agent that classifies input topics into 'generic', 'policy', or 'exit' with strict Pydantic JSON validation."""
 
     def __init__(self, model: Optional[Any] = None, max_retries: int = 3):
         self.model = model or get_llm(temperature=0.0, max_tokens=300)
@@ -25,18 +25,18 @@ class ClassifierAgent:
     def _build_prompt(self, user_content: str, chat_context: str = "") -> str:
         context_section = f"\nRecent Conversation Context:\n{chat_context}\n" if chat_context else ""
         return (
-            "You are an expert FDA and medical device decision-tree assistant.\n\n"
+            "You are an expert system architecture, policy, and compliance standards decision-tree assistant.\n\n"
             "Your output MUST conform exactly to this JSON schema (no extra markdown outside the JSON):\n"
             f"{self.format_instructions}\n\n"
             f"{context_section}"
-            "Add a key `classification` with value either 'generic', 'fda', or 'exit':\n"
-            "- If the query is an ongoing discussion or question about FDA topics, regulations, medical devices, pathways, "
-            "or follow-ups to the conversation context (e.g. 'why', 'elaborate', 'tell me more', 'what about clinical trials'), set `classification` to 'fda'.\n"
-            "- If the query is a pure greeting or completely unrelated chit-chat with no FDA context, set `classification` to 'generic'.\n"
+            "Add a key `classification` with value either 'generic', 'policy', or 'exit':\n"
+            "- If the query is an ongoing discussion or question about architecture standards, policies, system tiers, specifications, "
+            "compliance pathways, or follow-ups to the conversation context (e.g. 'why', 'elaborate', 'tell me more', 'what about verification'), set `classification` to 'policy'.\n"
+            "- If the query is a pure greeting or completely unrelated chit-chat with no policy/standards context, set `classification` to 'generic'.\n"
             "- If the query is to exit, stop, or end the conversation (e.g. 'exit', 'quit', 'bye'), set `classification` to 'exit'.\n\n"
             "Also add a key `reply`:\n"
-            "- If `classification` is 'generic', `reply` must be a friendly, helpful natural language response encouraging FDA topics.\n"
-            "- If `classification` is 'fda', `reply` must be the exact string 'FDA'.\n"
+            "- If `classification` is 'generic', `reply` must be a friendly, helpful natural language response encouraging policy and architecture topics.\n"
+            "- If `classification` is 'policy', `reply` must be the exact string 'POLICY'.\n"
             "- If `classification` is 'exit', `reply` must be the exact string 'exit'.\n\n"
             f"User input to classify:\n{user_content}"
         )
@@ -61,6 +61,18 @@ class ClassifierAgent:
         while attempt < self.max_retries:
             attempt += 1
             prompt_text = self._build_prompt(current_content, chat_context=chat_context)
+
+            # Modern structured output path
+            if hasattr(self.model, "with_structured_output"):
+                try:
+                    structured_llm = self.model.with_structured_output(Classify)
+                    result = await structured_llm.ainvoke(prompt_text)
+                    if isinstance(result, Classify):
+                        return result.model_dump()
+                    elif isinstance(result, dict) and "classification" in result:
+                        return result
+                except Exception as structured_err:
+                    logger.debug(f"Structured output call skipped/failed: {structured_err}")
 
             try:
                 response = await self.model.ainvoke(prompt_text)
@@ -89,12 +101,12 @@ class ClassifierAgent:
         if any(w in topic_lower for w in ["exit", "quit", "stop", "bye"]):
             return {"classification": "exit", "reply": "exit"}
         elif chat_history and len(chat_history) > 0:
-            # If in an active conversation, default follow-up to FDA reasoning
-            return {"classification": "fda", "reply": "FDA"}
-        elif any(w in topic_lower for w in ["fda", "device", "medical", "path", "node", "510k", "cfr", "regulation", "clinical"]):
-            return {"classification": "fda", "reply": "FDA"}
+            # If in an active conversation, default follow-up to policy reasoning
+            return {"classification": "policy", "reply": "POLICY"}
+        elif any(w in topic_lower for w in ["policy", "tier", "standard", "system", "spec", "path", "node", "benchmark", "compliance", "audit", "architecture"]):
+            return {"classification": "policy", "reply": "POLICY"}
         else:
-            return {"classification": "generic", "reply": "I can help you with FDA regulatory pathways. How can I assist you?"}
+            return {"classification": "generic", "reply": "I can help you with system architecture and policy standards. How can I assist you?"}
 
 
 # Helper function

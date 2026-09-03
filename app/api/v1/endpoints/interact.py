@@ -9,8 +9,10 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import RemoveMessage
 from langgraph.types import Command
 from app.core.observability import flush_langfuse, get_runnable_config
+from app.core.streaming import stream_graph_sse
 from app.api.deps import get_current_active_user
 from app.schemas.auth import UserResponse
+from app.schemas.state import get_device_data
 from app.schemas.interact import (
     InteractionRequest,
     DeleteThreadRequest,
@@ -28,33 +30,19 @@ async def stream_graph_events(
     config: Dict[str, Any],
     thread_id: str,
 ) -> AsyncGenerator[str, None]:
-    """Streams events from the LangGraph workflow using Server-Sent Events (SSE).
-
-    1. Yields the thread_id as the initial event.
-    2. Emits dynamic node and tool execution hints specialized to user input.
-    3. Streams token chunks in real-time ONLY from the final 'RegulatoryExpert' reasoning node.
-    4. Handles fallback replies for non-reasoning paths.
-    """
-    reply_flag = False
-    seen_start_nodes = set()
-    seen_end_nodes = set()
-    seen_tools = set()
-
-    # Extract user input context for dynamic specialized hints
+    """Streams events from the LangGraph workflow using Server-Sent Events (SSE)."""
     user_input = ""
     device_name = ""
     if isinstance(inputs, dict):
         user_input = inputs.get("feedback") or ""
-        device_name = inputs.get("userProvidedDeiveceData") or inputs.get("user_choices", {}).get("device_class", "") or "medical device"
+        device_name = get_device_data(inputs) or inputs.get("user_choices", {}).get("system_tier", "") or inputs.get("user_choices", {}).get("device_class", "") or "enterprise system"
     elif hasattr(inputs, "resume"):
         user_input = str(inputs.resume)
-        device_name = "medical device"
+        device_name = "enterprise system"
 
     if not user_input:
-        user_input = "regulatory inquiry"
+        user_input = "policy inquiry"
 
-    # 1. Send the thread_id as the initial event
-    yield f"data: {json.dumps({'thread_id': thread_id})}\n\n"
     logger.info(f"--- Starting Graph Stream for Thread ID: {thread_id} ---")
 
     graph_nodes = {
@@ -66,104 +54,74 @@ async def stream_graph_events(
         "process_feedback",
     }
 
-    try:
-        # 2. Stream events from graph execution (v2 event stream protocol)
-        events = graph.astream_events(input=inputs, config=config, version="v2")
+    def node_start_hint(node_name: str) -> str:
+        if node_name == "user_initpath":
+            return f"Routing Engine: Parsing user intent, system parameters, and policy path for '{user_input[:40]}...'"
+        elif node_name == "classify_node":
+            return f"Structured Classifier: Validating policy schema and routing compliance for '{user_input[:40]}...'"
+        elif node_name == "device_summary":
+            return f"System Profiler: Synthesizing specifications and classification tier for '{device_name}'..."
+        elif node_name == "knowledge_base":
+            return f"Knowledge Base: Performing BM25 + dense retrieval for '{user_input[:40]}...'"
+        elif node_name == "reason_llm":
+            return f"Policy Expert: Synthesizing compliance pathway and standard specification reasoning for '{user_input[:40]}...'"
+        elif node_name == "process_feedback":
+            return "Human-in-the-Loop: Awaiting user feedback/authorization on policy guidance..."
+        return f"Executing Node: {node_name} for '{user_input[:35]}...'"
 
-        async for event in events:
-            event_type = event.get("event")
-            event_tags = event.get("tags") or []
-            node_name = event.get("name", "")
+    def node_end_hint(node_name: str, output: Dict[str, Any]) -> str:
+        if node_name == "classify_node":
+            cls_val = output.get("classification", {})
+            choice_str = cls_val.get("user_choice") or cls_val.get("decision_path") or "analyzed"
+            return f"Structured Classifier: Confirmed route '{choice_str}' for '{user_input[:35]}...'"
+        elif node_name == "device_summary":
+            return f"System Profiler: Generated technical profile for '{device_name}'"
+        elif node_name == "knowledge_base":
+            return "Knowledge Base: Matched relevant policy standards and guidance documents"
+        elif node_name == "reason_llm":
+            return f"Policy Expert: Finalized compliance recommendations for '{device_name}'"
+        return f"Completed {node_name} for '{user_input[:35]}...'"
 
-            # 2a. Dynamic Node Start Hints tailored to user input & device context
-            if event_type == "on_chain_start" and node_name in graph_nodes and node_name not in seen_start_nodes:
-                seen_start_nodes.add(node_name)
-                if node_name == "user_initpath":
-                    hint = f"Routing Engine: Parsing user intent, device parameters, and regulatory path for '{user_input[:40]}...'"
-                elif node_name == "classify_node":
-                    hint = f"Structured Classifier: Validating regulatory schema and routing compliance for '{user_input[:40]}...'"
-                elif node_name == "device_summary":
-                    hint = f"Device Profiler: Synthesizing specifications and classification tier for '{device_name}'..."
-                elif node_name == "knowledge_base":
-                    hint = f"Knowledge Base: Performing BM25 + dense retrieval for '{user_input[:40]}...'"
-                elif node_name == "reason_llm":
-                    hint = f"Regulatory Expert: Synthesizing compliance pathway and 510(k)/PMA reasoning for '{user_input[:40]}...'"
-                elif node_name == "process_feedback":
-                    hint = "Human-in-the-Loop: Awaiting user feedback/authorization on regulatory guidance..."
-                else:
-                    hint = f"Executing Node: {node_name} for '{user_input[:35]}...'"
+    def tool_start_hint(tool_name: str, tool_input: Any) -> str:
+        query_param = (
+            tool_input.get("query") or tool_input.get("q") or str(tool_input)
+            if isinstance(tool_input, dict)
+            else str(tool_input)
+        )
+        return f"Tool [{tool_name}]: Querying benchmark data for '{query_param[:40]}...'..."
 
-                yield f"data: {json.dumps({'stage': node_name, 'status': 'started', 'hint': hint})}\n\n"
+    def tool_end_hint(tool_name: str, tool_output: Any) -> str:
+        return f"Tool [{tool_name}]: Benchmark intelligence retrieved for '{device_name}'"
 
-            # 2b. Dynamic Tool Execution Start Hints
-            elif event_type == "on_tool_start":
-                tool_name = event.get("name", "tool")
-                tool_input = event.get("data", {}).get("input") or {}
-                tool_run_id = event.get("run_id", tool_name)
+    async def fallback_resolver():
+        current_state = await graph.aget_state(config)
+        if not current_state:
+            return ""
+        classification = current_state.values.get("classification", {})
+        if isinstance(classification, dict) and classification.get("reply"):
+            return classification["reply"]
+        elif current_state.values.get("chat_history"):
+            last_msg = current_state.values["chat_history"][-1]
+            return getattr(last_msg, "content", str(last_msg))
+        return ""
 
-                if tool_run_id not in seen_tools:
-                    seen_tools.add(tool_run_id)
-                    query_param = ""
-                    if isinstance(tool_input, dict):
-                        query_param = tool_input.get("query") or tool_input.get("q") or str(tool_input)
-                    else:
-                        query_param = str(tool_input)
+    async for chunk in stream_graph_sse(
+        graph=graph,
+        inputs=inputs,
+        config=config,
+        stream_tags={"PolicyExpert", "reason_llm"},
+        graph_nodes=graph_nodes,
+        initial_event={"thread_id": thread_id},
+        node_start_hint=node_start_hint,
+        node_end_hint=node_end_hint,
+        tool_start_hint=tool_start_hint,
+        tool_end_hint=tool_end_hint,
+        fallback_resolver=fallback_resolver,
+        stream_format="interact",
+    ):
+        yield chunk
 
-                    tool_hint = f"Tool [{tool_name}]: Querying regulatory predicate data for '{query_param[:40]}...'..."
-                    yield f"data: {json.dumps({'event': 'tool_start', 'tool': tool_name, 'data': tool_hint})}\n\n"
-
-            # 2c. Dynamic Tool Execution End Hints
-            elif event_type == "on_tool_end":
-                tool_name = event.get("name", "tool")
-                tool_hint = f"Tool [{tool_name}]: Regulatory intelligence retrieved for '{device_name}'"
-                yield f"data: {json.dumps({'event': 'tool_end', 'tool': tool_name, 'data': tool_hint})}\n\n"
-
-            # 2d. Dynamic Node Completion Hints
-            elif event_type == "on_chain_end" and node_name in graph_nodes and node_name not in seen_end_nodes:
-                seen_end_nodes.add(node_name)
-                output = event.get("data", {}).get("output") or {}
-
-                if node_name == "classify_node":
-                    cls_val = output.get("classification", {})
-                    choice_str = cls_val.get("user_choice") or cls_val.get("decision_path") or "analyzed"
-                    hint = f"Structured Classifier: Confirmed route '{choice_str}' for '{user_input[:35]}...'"
-                elif node_name == "device_summary":
-                    hint = f"Device Profiler: Generated technical profile for '{device_name}'"
-                elif node_name == "knowledge_base":
-                    hint = f"Knowledge Base: Matched relevant FDA regulations and guidance documents"
-                elif node_name == "reason_llm":
-                    hint = f"Regulatory Expert: Finalized compliance recommendations for '{device_name}'"
-                else:
-                    hint = f"Completed {node_name} for '{user_input[:35]}...'"
-
-                yield f"data: {json.dumps({'stage': node_name, 'status': 'completed', 'hint': hint})}\n\n"
-
-            # 3. Stream tokens ONLY from the final reasoning LLM node
-            elif event_type == "on_chat_model_stream":
-                if any(tag in ["RegulatoryExpert", "reason_llm"] for tag in event_tags):
-                    chunk = event.get("data", {}).get("chunk")
-                    chunk_content = getattr(chunk, "content", "") if chunk else ""
-                    if chunk_content:
-                        reply_flag = True
-                        yield f"data: {json.dumps({'response': chunk_content})}\n\n"
-
-        # 4. Fallback for generic or classified replies if reasoning node was bypassed
-        if not reply_flag:
-            current_state = await graph.aget_state(config)
-            classification = current_state.values.get("classification", {})
-            if isinstance(classification, dict) and classification.get("reply"):
-                yield f"data: {json.dumps({'response': classification['reply']})}\n\n"
-            elif current_state.values.get("chat_history"):
-                last_msg = current_state.values["chat_history"][-1]
-                content = getattr(last_msg, "content", str(last_msg))
-                yield f"data: {json.dumps({'response': content})}\n\n"
-
-    except Exception as e:
-        logger.error(f"Exception during graph streaming for thread {thread_id}: {e}")
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
-    finally:
-        flush_langfuse()
-        logger.info(f"--- Finished Graph Stream for Thread ID: {thread_id} ---")
+    logger.info(f"--- Finished Graph Stream for Thread ID: {thread_id} ---")
 
 
 @router.post("/interact", tags=["Interaction"])
@@ -203,7 +161,8 @@ async def interact_endpoint(
             "user_choices": request.user_choices or {},
             "feedback": request.user_input or "",
             "useDeviceData": request.useDeviceData,
-            "userProvidedDeiveceData": request.userProvidedDeiveceData or "",
+            "userProvidedDeiveceData": request.device_data,
+            "user_provided_device_data": request.device_data,
             "chat_history": [],
         }
         return StreamingResponse(
@@ -228,7 +187,8 @@ async def interact_endpoint(
             resume=request.user_input,
             update={
                 "useDeviceData": request.useDeviceData,
-                "userProvidedDeiveceData": request.userProvidedDeiveceData or "",
+                "userProvidedDeiveceData": request.device_data,
+                "user_provided_device_data": request.device_data,
             },
         )
         return StreamingResponse(
@@ -312,9 +272,14 @@ async def delete_thread_endpoint(
             try:
                 async with db_pool.connection() as conn:
                     async with conn.cursor() as cur:
-                        await cur.execute("DELETE FROM checkpoints WHERE thread_id = %s", (request.thread_id,))
-                        await cur.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (request.thread_id,))
-                        await cur.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (request.thread_id,))
+                        await cur.execute(
+                            """
+                            DELETE FROM checkpoint_writes WHERE thread_id = %s;
+                            DELETE FROM checkpoint_blobs WHERE thread_id = %s;
+                            DELETE FROM checkpoints WHERE thread_id = %s;
+                            """,
+                            (request.thread_id, request.thread_id, request.thread_id),
+                        )
                         logger.info(f"Purged checkpoints for thread '{request.thread_id}' from PostgreSQL.")
             except Exception as pool_err:
                 logger.warning(f"Direct PostgreSQL checkpoint tables deletion warning: {pool_err}")

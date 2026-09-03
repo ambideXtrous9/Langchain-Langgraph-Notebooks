@@ -17,8 +17,8 @@ def test_should_skip_doc_filters():
     assert retriever._should_skip_doc(toc_doc) is True
 
     valid_doc = Document(
-        page_content="FDA 21 CFR Part 820 requires quality system controls.",
-        metadata={"source": "cfr820.pdf"},
+        page_content="ISO/IEC 27001 requires information security management system controls.",
+        metadata={"source": "iso27001.pdf"},
     )
     assert retriever._should_skip_doc(valid_doc) is False
 
@@ -26,9 +26,9 @@ def test_should_skip_doc_filters():
 def test_in_memory_retrieval():
     """Tests in-memory retriever search."""
     base_retriever = create_in_memory_retriever()
-    docs = base_retriever.invoke("quality system regulation")
+    docs = base_retriever.invoke("security controls")
     assert len(docs) > 0
-    assert any("820" in doc.page_content for doc in docs)
+    assert any("27001" in doc.page_content or "800-53" in doc.page_content for doc in docs)
 
 
 def test_ensemble_retriever_creation():

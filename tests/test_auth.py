@@ -200,7 +200,7 @@ async def test_protected_endpoints_unauthorized_rejection():
         assert chat_res.status_code == 401
 
         # 2. /research/run without token
-        research_res = await client.post("/research/run", json={"topic": "FDA 510k"})
+        research_res = await client.post("/research/run", json={"topic": "ISO 27001 Security Controls"})
         assert research_res.status_code == 401
 
         # 3. /get_sql_query without token

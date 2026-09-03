@@ -2,7 +2,7 @@
 
 import logging
 from typing import Literal
-from app.schemas.state import AgentState
+from app.schemas.state import AgentState, get_device_data
 
 logger = logging.getLogger(__name__)
 
@@ -23,14 +23,15 @@ def decide_start_node(state: AgentState) -> Literal["end", "feedbackloop", "devi
 
     chat_history = state.get("chat_history") or []
     has_history = len(chat_history) > 0
+    device_data = get_device_data(state)
 
     if class_type == "exit":
         return "end"
-    elif state.get("useDeviceData") is True and state.get("userProvidedDeiveceData"):
+    elif state.get("useDeviceData") is True and device_data:
         return "device"
     elif class_type == "generic" and not has_history:
         # Only brand-new uncontextualized generic greetings route directly to feedback loop
         return "feedbackloop"
     else:
-        # All ongoing thread conversations & FDA queries route to knowledge base and reason LLM
+        # All ongoing thread conversations & policy/standards queries route to knowledge base and reason LLM
         return "knowledge"

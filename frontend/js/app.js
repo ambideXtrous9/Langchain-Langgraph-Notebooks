@@ -1,5 +1,5 @@
 /**
- * RP360 // Chat Platform Main Entrypoint
+ * AgentSphere // Chat Platform Main Entrypoint
  * Bootstraps ChatGPT-style layout, agent switches, modals, and telemetry.
  */
 
@@ -11,7 +11,7 @@ import { AGENTS } from "./agents.js";
 
 class ChatApp {
   async init() {
-    console.log("Starting RP360 Multi-Agent Chat Interface...");
+    console.log("Starting AgentSphere Multi-Agent Chat Interface...");
 
     // Setup Marked.js & Highlight.js
     if (window.marked) {
@@ -141,11 +141,11 @@ class ChatApp {
         try {
           await auth.login(email, password);
           authModal.classList.remove("is-open");
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: `Welcome back, ${email}!`, type: "success" }
           }));
         } catch (err) {
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: err.message, type: "error" }
           }));
         } finally {
@@ -168,11 +168,11 @@ class ChatApp {
         try {
           await auth.signup(email, name, password);
           authModal.classList.remove("is-open");
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: "Account created and signed in!", type: "success" }
           }));
         } catch (err) {
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: err.message, type: "error" }
           }));
         } finally {
@@ -199,11 +199,11 @@ class ChatApp {
             const tokenInput = document.getElementById("reset-token");
             if (tokenInput) tokenInput.value = token;
           }
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: res.message || "Reset token generated.", type: "info" }
           }));
         } catch (err) {
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: err.message, type: "error" }
           }));
         } finally {
@@ -228,11 +228,11 @@ class ChatApp {
           setAuthView("login");
           if (authModal) authModal.classList.add("is-open");
 
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: res.message || "Password updated. You can now log in.", type: "success" }
           }));
         } catch (err) {
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: err.message, type: "error" }
           }));
         } finally {
@@ -247,8 +247,22 @@ class ChatApp {
     const modal = document.getElementById("agent-config-modal");
     const saveBtn = document.getElementById("config-save-btn");
 
+    const populateInputs = () => {
+      const p = AGENTS.policy?.params || {};
+      const devClassEl = document.getElementById("cfg-device-class");
+      const predicateEl = document.getElementById("cfg-predicate");
+      const autoEl = document.getElementById("cfg-autonomous");
+      const specsEl = document.getElementById("cfg-specs");
+
+      if (devClassEl && (p.system_tier || p.device_class)) devClassEl.value = p.system_tier || p.device_class;
+      if (predicateEl) predicateEl.value = p.reference_standard || p.predicate_device || "";
+      if (autoEl) autoEl.checked = Boolean(p.is_autonomous);
+      if (specsEl) specsEl.value = p.system_specs || p.device_specs || "";
+    };
+
     if (configBtn && modal) {
       configBtn.addEventListener("click", () => {
+        populateInputs();
         modal.classList.add("is-open");
       });
     }
@@ -257,19 +271,20 @@ class ChatApp {
       saveBtn.addEventListener("click", () => {
         const devClass = document.getElementById("cfg-device-class")?.value;
         const predicate = document.getElementById("cfg-predicate")?.value;
-        const samd = document.getElementById("cfg-samd")?.checked;
+        const isAuto = document.getElementById("cfg-autonomous")?.checked;
         const specs = document.getElementById("cfg-specs")?.value;
 
-        AGENTS.regulatory.params.device_class = devClass;
-        AGENTS.regulatory.params.predicate_device = predicate;
-        AGENTS.regulatory.params.is_samd = samd;
-        AGENTS.regulatory.params.device_specs = specs;
-
-        chatPlatform.renderParamChips(AGENTS.regulatory);
+        if (AGENTS.policy) {
+          AGENTS.policy.params.system_tier = devClass;
+          AGENTS.policy.params.reference_standard = predicate;
+          AGENTS.policy.params.is_autonomous = isAuto;
+          AGENTS.policy.params.system_specs = specs;
+          chatPlatform.renderParamChips(AGENTS.policy);
+        }
         modal.classList.remove("is-open");
 
-        window.dispatchEvent(new CustomEvent("rp360:notify", {
-          detail: { message: "Agent parameters updated.", type: "success" }
+        window.dispatchEvent(new CustomEvent("agentsphere:notify", {
+          detail: { message: "Policy and architecture parameters updated.", type: "success" }
         }));
       });
     }
@@ -296,7 +311,7 @@ class ChatApp {
           setApiBase(val);
           this.checkHealthStatus();
           modal?.classList.remove("is-open");
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: `API Origin set to ${val}`, type: "success" }
           }));
         }
@@ -309,7 +324,7 @@ class ChatApp {
         if (input) input.value = CONFIG.DEFAULT_API_BASE;
         this.checkHealthStatus();
         modal?.classList.remove("is-open");
-        window.dispatchEvent(new CustomEvent("rp360:notify", {
+        window.dispatchEvent(new CustomEvent("agentsphere:notify", {
           detail: { message: "API Origin reset to default.", type: "info" }
         }));
       });
@@ -320,7 +335,7 @@ class ChatApp {
     const container = document.getElementById("toast-container");
     if (!container) return;
 
-    window.addEventListener("rp360:notify", (e) => {
+    window.addEventListener("agentsphere:notify", (e) => {
       const { message, type } = e.detail || {};
       if (!message) return;
 

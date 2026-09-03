@@ -67,10 +67,10 @@ if __name__ == "__main__":
     print("=========================================================")
     thread_id = stream_interaction(
         base_url=base_url,
-        user_choices={"classification": "Class II", "pathway": "510(k)"},
-        user_input="If I have a novel arrhythmia detection algorithm, what is the best regulatory pathway?",
+        user_choices={"classification": "Tier 2", "pathway": "Baseline Benchmark"},
+        user_input="If I have a novel distributed telemetry system, what is the best compliance pathway?",
         use_device_data=True,
-        device_data="AI-enabled ECG monitor providing automated QTc interval measurement.",
+        device_data="AI-enabled telemetry engine providing automated log anomaly detection.",
     )
 
     if thread_id:

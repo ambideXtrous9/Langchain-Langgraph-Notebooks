@@ -1,5 +1,5 @@
 /**
- * RP360 // Text-to-SQL Natural Language Analytics Agent
+ * AgentSphere // Text-to-SQL Natural Language Analytics Agent
  * Connects to /get_sql_query.
  */
 
@@ -29,7 +29,7 @@ class SQLAgentController {
       copySqlBtn.addEventListener("click", () => {
         if (this.currentSql) {
           navigator.clipboard.writeText(this.currentSql);
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: "SQL query copied to clipboard.", type: "success" }
           }));
         }
@@ -59,7 +59,7 @@ class SQLAgentController {
     const query = inputEl ? inputEl.value.trim() : "";
 
     if (!query) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "Please enter a natural language database question.", type: "error" }
       }));
       return;
@@ -106,14 +106,14 @@ class SQLAgentController {
 
       this.renderTable(tableResult);
 
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "SQL query and result table generated.", type: "success" }
       }));
     } catch (err) {
       if (answerBox) {
         answerBox.innerHTML = `<div class="tag alert" style="margin-bottom: 8px;">EXECUTION ERROR</div><p style="color: var(--alert);">${err.message}</p>`;
       }
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: `SQL Agent Error: ${err.message}`, type: "error" }
       }));
     } finally {
@@ -171,7 +171,7 @@ class SQLAgentController {
 
   exportCsv() {
     if (!this.currentTableData || this.currentTableData.length === 0) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "No table data available to export.", type: "error" }
       }));
       return;
@@ -185,7 +185,7 @@ class SQLAgentController {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `RP360_Query_Results_${Date.now()}.csv`;
+    a.download = `AgentSphere_Query_Results_${Date.now()}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

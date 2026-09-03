@@ -1,5 +1,5 @@
 /**
- * RP360 // Regulatory Decision-Tree & Human-in-the-Loop Navigator
+ * AgentSphere // Policy Decision-Tree & Human-in-the-Loop Navigator
  * Connects to /interact (SSE), /ws/interact (WebSocket), /thread/{id}/state, and /delete_thread.
  */
 
@@ -58,8 +58,8 @@ class DecisionTreeController {
       copyBtn.addEventListener("click", () => {
         if (this.accumulatedText) {
           navigator.clipboard.writeText(this.accumulatedText);
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
-            detail: { message: "Regulatory guidance copied to clipboard.", type: "success" }
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
+            detail: { message: "Policy guidance copied to clipboard.", type: "success" }
           }));
         }
       });
@@ -84,23 +84,27 @@ class DecisionTreeController {
   }
 
   getFormData() {
-    const deviceClass = document.getElementById("dt-device-class")?.value || "Class II";
-    const intendedUse = document.getElementById("dt-intended-use")?.value || "Clinical diagnostics";
+    const deviceClass = document.getElementById("dt-device-class")?.value || "Tier 2";
+    const intendedUse = document.getElementById("dt-intended-use")?.value || "Enterprise telemetry";
     const predicateDevice = document.getElementById("dt-predicate-device")?.value || "";
-    const isSamd = document.getElementById("dt-is-samd")?.checked || false;
+    const isAutonomous = document.getElementById("dt-is-autonomous")?.checked || false;
     const useDeviceData = document.getElementById("dt-use-device-data")?.checked || false;
     const deviceSpecs = document.getElementById("dt-device-specs")?.value || "";
     const userInput = document.getElementById("dt-user-input")?.value || "";
 
     return {
       user_choices: {
-        device_class: deviceClass,
+        system_tier: deviceClass,
         intended_use: intendedUse,
-        predicate_device: predicateDevice,
-        software_as_medical_device: isSamd,
+        reference_standard: predicateDevice,
+        is_autonomous: isAutonomous,
       },
       user_input: userInput,
       useDeviceData: useDeviceData,
+      useSystemData: useDeviceData,
+      user_provided_system_data: deviceSpecs,
+      user_provided_spec_data: deviceSpecs,
+      user_provided_device_data: deviceSpecs,
       userProvidedDeiveceData: deviceSpecs,
       thread_id: this.activeThreadId || undefined,
     };
@@ -127,7 +131,7 @@ class DecisionTreeController {
     const consoleBody = document.getElementById("dt-console-body");
     const previewBox = document.getElementById("dt-preview-box");
     if (consoleBody) consoleBody.innerHTML = '<span class="mono" style="color: #6e7681;">[Awaiting execution start...]</span>';
-    if (previewBox) previewBox.innerHTML = '<p class="mono" style="color: var(--slate);">Synthesized regulatory recommendations will appear here...</p>';
+    if (previewBox) previewBox.innerHTML = '<p class="mono" style="color: var(--slate);">Synthesized policy recommendations will appear here...</p>';
     this.hideHitlBanner();
     this.resetAllNodes();
   }
@@ -164,8 +168,8 @@ class DecisionTreeController {
       if (promptEl && promptText) promptEl.textContent = promptText;
     }
     this.setNodeState("process_feedback", "interrupted");
-    window.dispatchEvent(new CustomEvent("rp360:notify", {
-      detail: { message: "Human-in-the-Loop interrupt: Regulatory review required.", type: "info" }
+    window.dispatchEvent(new CustomEvent("agentsphere:notify", {
+      detail: { message: "Human-in-the-Loop interrupt: Policy review required.", type: "info" }
     }));
   }
 
@@ -203,8 +207,8 @@ class DecisionTreeController {
 
     const formData = this.getFormData();
     if (!formData.user_input && !isResume) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
-        detail: { message: "Please enter a device description or regulatory question.", type: "error" }
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
+        detail: { message: "Please enter a system description or policy question.", type: "error" }
       }));
       return;
     }
@@ -240,7 +244,7 @@ class DecisionTreeController {
     const feedbackText = feedbackInput ? feedbackInput.value.trim() : "";
 
     if (!feedbackText) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "Please provide feedback or type 'approve' to continue.", type: "error" }
       }));
       return;
@@ -296,7 +300,7 @@ class DecisionTreeController {
 
         if (data.error) {
           this.appendConsoleLog(`Error: ${data.error}`, "tool");
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: `Graph execution error: ${data.error}`, type: "error" }
           }));
         }
@@ -323,6 +327,7 @@ class DecisionTreeController {
           thread_id: this.activeThreadId,
           user_input: formData.user_input,
           useDeviceData: formData.useDeviceData,
+          user_provided_device_data: formData.user_provided_device_data || formData.userProvidedDeiveceData,
           userProvidedDeiveceData: formData.userProvidedDeiveceData,
         }
       : {
@@ -330,6 +335,7 @@ class DecisionTreeController {
           user_choices: formData.user_choices,
           user_input: formData.user_input,
           useDeviceData: formData.useDeviceData,
+          user_provided_device_data: formData.user_provided_device_data || formData.userProvidedDeiveceData,
           userProvidedDeiveceData: formData.userProvidedDeiveceData,
         };
 
@@ -384,7 +390,7 @@ class DecisionTreeController {
    */
   async inspectThreadState() {
     if (!this.activeThreadId) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "No active thread ID to inspect. Run a pathway first.", type: "error" }
       }));
       return;
@@ -412,7 +418,7 @@ class DecisionTreeController {
       const modal = document.getElementById("thread-state-modal");
       if (modal) modal.classList.add("is-open");
     } catch (err) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: `Failed to inspect state: ${err.message}`, type: "error" }
       }));
     }
@@ -436,11 +442,11 @@ class DecisionTreeController {
       const deletedId = this.activeThreadId;
       this.updateThreadDisplay(null);
       this.resetConsole();
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: `Thread checkpoint [${deletedId}] evicted.`, type: "success" }
       }));
     } catch (err) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: `Failed to delete thread: ${err.message}`, type: "error" }
       }));
     }
