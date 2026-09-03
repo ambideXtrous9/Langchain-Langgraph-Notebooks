@@ -23,6 +23,7 @@ A reference implementation and production-grade boilerplate for building robust,
     - [D. Accessing Guarded Endpoints & Tenant Isolation](#d-accessing-guarded-endpoints--tenant-isolation)
     - [E. WebSocket Handshake & Streaming Authentication](#e-websocket-handshake--streaming-authentication-appapiv1endpointswebsocketpy)
     - [F. Comprehensive Execution Path & Technical Component Matrix](#f-comprehensive-execution-path--technical-component-matrix)
+    - [G. Technology Stack, Specific Packages & Architectural Roles](#g-technology-stack-specific-packages--architectural-roles)
   - [2. Workflow Graphs](#2-workflow-graphs)
 - [Core Mechanisms & Design Patterns](#-core-mechanisms--design-patterns)
 - [Project Directory Structure](#-project-directory-structure)
@@ -430,6 +431,70 @@ The table below details every request path through the system, the security depe
 | **`DELETE /delete_session`** | HTTP REST | `Depends(get_current_active_user)` | `agent_db` (`chat_history`) | None | Session Message Eviction | `DeleteSessionResponse` JSON |
 | **`POST /get_sql_query`** | HTTP REST | `Depends(get_current_active_user)` | `auth_db` (Auth), `agent_db` (SQL Schema) | RateLimit, PII, HITL | `create_sql_agent` (SQLDatabaseToolkit) | `SQLQueryResponse` JSON + Data Table |
 | **`WS /ws/interact`** | WebSocket | Query Param `?token=` Handshake | `auth_db` (Auth), `agent_db` (Checkpoints) | RateLimit, PII, HITL | Bi-directional LangGraph Runner | Full-duplex JSON streaming frames |
+
+---
+
+#### G. Technology Stack, Specific Packages & Architectural Roles
+
+Every stage of the authentication, authorization, database persistence, and agent execution lifecycle is powered by battle-tested, specialized open-source libraries:
+
+##### 1. FastAPI & ASGI Gateway Layer
+- **`fastapi` (`fastapi==0.141.1`)**: Core async framework providing high-throughput endpoint routing, OpenAPI / Swagger documentation generation, dependency injection, and declarative request/response validation.
+- **`starlette` (`starlette==1.6.0`)**: Low-level ASGI toolkit underlying FastAPI, providing base classes for `Request`, `Response`, `StreamingResponse`, and `WebSocket`.
+- **`uvicorn` (`uvicorn==0.52.4`) + `uvloop` (`uvloop==0.22.1`) + `httptools` (`httptools==0.8.0`)**: Production ASGI server stack utilizing the C-based Linux epoll event loop (`uvloop`) and high-speed C HTTP parser (`httptools`) for microsecond-level request dispatch.
+- **`fastapi.security.OAuth2PasswordBearer`**: Native security scheme that extracts the bearer token from the `Authorization: Bearer <token>` HTTP header and automatically configures interactive Bearer authentication in Swagger UI (`/docs`).
+- **`python-multipart` (`python-multipart==0.0.32`)**: Streaming parser for `application/x-www-form-urlencoded` and multipart form requests, enabling native OAuth2 password grant form handling on `/auth/login`.
+- **`fastapi.middleware.cors.CORSMiddleware`**: Intercepts preflight `OPTIONS` requests, verifies origin whitelisting against `settings.CORS_ORIGINS`, and injects appropriate `Access-Control-Allow-*` headers.
+- **`fastapi.responses.StreamingResponse`**: Manages chunked Server-Sent Events (SSE) data streams (`media_type="text/event-stream"`), streaming real-time LLM token chunks and dynamic agent progress hints without buffering.
+- **`fastapi.WebSocket` & `fastapi.WebSocketDisconnect`**: Manages the bi-directional TCP socket lifecycle, supporting connection upgrade, query-token authorization, policy violation closing (`WS_1008_POLICY_VIOLATION`), and real-time frame distribution.
+
+##### 2. Authentication, Cryptography & Security Layer
+- **`pwdlib` (`pwdlib==0.3.1`) & `argon2-cffi` (`argon2-cffi==25.1.0`)**:
+  - **Algorithm**: `PasswordHash.recommended()` configures **Argon2id** (the PHC winner and OWASP #1 recommended password hash).
+  - **Parameters**: Salted hash with memory-hardness ($m=65536$, $t=3$, $p=4$) preventing GPU, ASIC, and rainbow table brute-force attacks.
+  - **Immunity**: Constant-time verification (`password_hasher.verify()`) protects against side-channel timing attacks.
+- **`pyjwt` (`pyjwt==2.13.0`)**:
+  - **Token Engine**: Signs and decodes JSON Web Tokens using cryptographic HMAC-SHA256 (`HS256`) against `settings.JWT_SECRET_KEY`.
+  - **Claims Verification**: Emits and validates standard RFC 7519 claims: `sub` (email), `user_id` (UUID), `role`, `iat` (issued at), `exp` (60m access expiry, 15m reset expiry), `jti` (unique token ID), and `token_type`.
+  - **Tamper Protection**: Detects token tampering, invalid signatures (`InvalidTokenError`), and expired tokens (`ExpiredSignatureError`).
+- **`hashlib` (Python Standard Library)**:
+  - Computes SHA-256 digests (`hashlib.sha256(token.encode()).hexdigest()`) of password reset tokens before storing them in `password_reset_tokens` in `auth_db`. Plaintext reset tokens are never persisted, preventing credential compromise even if the database is leaked.
+- **`uuid` (Python Standard Library)**:
+  - Generates cryptographically isolated UUID v4 identifiers for user primary keys (`gen_random_uuid()`), unique `jti` token fingerprints, and tenant thread namespaces (`user-{id}-{uuid}`).
+
+##### 3. Database Driver, Connection Pooling & Checkpointing Layer
+- **`psycopg` (`psycopg==3.3.4`) & `psycopg-binary`**:
+  - Modern, native asynchronous PostgreSQL 3 driver utilizing Python's `async/await` syntax.
+  - **SQL Injection Prevention**: Parameterized query execution using `%s` placeholders for all dynamic inputs across user lookups, token insertions, and blacklist queries.
+  - **Row Factory**: Configured with `row_factory=dict_row` to automatically convert SQL result tuples into native Python dictionaries keyed by column name.
+- **`psycopg-pool` (`psycopg-pool==3.3.1`)**:
+  - `AsyncConnectionPool`: Maintains high-performance connection pools for both `auth_db` and `agent_db` (`min_size=2`, `max_size=10`). Reuses pre-established TCP database connections and eliminates connection handshake latency on every request.
+- **`langgraph-checkpoint-postgres` (`langgraph-checkpoint-postgres==3.1.2`)**:
+  - `AsyncPostgresSaver`: Implements persistent distributed checkpointing for LangGraph StateGraphs. Checkpoints thread states, node outputs, and channels directly into PostgreSQL, enabling state hydration, graph rollback, and human-in-the-loop resumes.
+- **`langchain-postgres` (`langchain-postgres==0.0.17`)**:
+  - `PostgresChatMessageHistory`: Manages conversational memory persistence in PostgreSQL for generic chat sessions, persisting user and assistant messages across server restarts.
+
+##### 4. Data Validation, Configuration & Schema Modeling Layer
+- **`pydantic` (`pydantic==2.13.4`) & `pydantic-core` (`pydantic-core==2.46.4`)**:
+  - Rust-backed high-speed data validation and serialization.
+  - Validates request schemas (`UserSignupRequest`, `InteractionRequest`, `ResearchRequest`, `SQLQueryRequest`) and serializes response schemas (`UserResponse`, `TokenResponse`, etc.).
+  - Enforces structured JSON output parsing for the classifier agent via `PydanticOutputParser`.
+- **`pydantic-settings` (`pydantic-settings==2.15.0`)**:
+  - `BaseSettings`: Strongly typed configuration engine reading environment variables from `.env`, enforcing type constraints, and setting production defaults.
+
+##### 5. Agent Middleware, LLM Runtimes & Observability Layer
+- **`langgraph` (`langgraph==1.2.2`)**:
+  - Stateful multi-agent orchestration framework supporting cyclical graphs, parallel branches with synchronization joins (`defer=True`), and Human-in-the-Loop interrupts (`interrupt()`).
+- **`langfuse` (`langfuse==4.14.4`)**:
+  - Production observability engine providing non-blocking OpenTelemetry traces, latency analysis, token consumption tracking, and session debugging via `langfuse.callback.CallbackHandler`.
+- **`langchain-mcp-adapters` (`langchain-mcp-adapters==0.3.1`) & `mcp` (`mcp==1.29.0`)**:
+  - Standardized Model Context Protocol (MCP) client running stdio subprocesses (`npx @openbnb/mcp-server-airbnb`, `@pinecone-database/mcp`).
+- **`langchain-groq` (`langchain-groq==1.1.3`) & `groq` (`groq==0.37.1`)**:
+  - Ultra-low latency LPU inference client running open models (`openai/gpt-oss-120b`).
+- **`tiktoken` (`tiktoken==0.14.0`)**:
+  - Fast BPE token counting used by `SummarizationMiddleware` to enforce token budget boundaries.
+- **`duckduckgo-search` (`duckduckgo-search==8.1.1`)**:
+  - Real-time zero-configuration live search engine integration for researcher dispatchers.
 
 ---
 
