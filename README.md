@@ -332,6 +332,24 @@ Modular, extensible middleware system implementing lifecycle interception (`run_
 - **`HumanInTheLoopMiddleware`**: Intercepts sensitive tool calls (e.g. `execute_sql_mutation`, `submit_fda_filing`) and pauses execution until human authorization is granted.
 - **`SummarizationMiddleware`**: Token- and message-count-aware chat history compressor (`trigger=[("tokens", 1200), ("messages", 8)]`), summarizing older dialogue while preserving recent context.
 
+### 10. Centralized Streaming Engine (`app/core/streaming.py`)
+- **DRY SSE Event Generation**: Unified `stream_graph_events` async generator eliminates repetitive SSE serialization across endpoints (`/interact`, `/research/stream`, `/mcp/stream`).
+- **Granular Token & Hint Filtering**: Emits metadata events (`tool_start`, `tool_end`, `stage`, `hint`) while routing filtered `on_chat_model_stream` tokens with active agent tags (`RegulatoryExpert`, `HPLoreScholar`, `TourGuideExpert`, `Publisher`).
+- **Heartbeat & Error Encapsulation**: Guarantees keep-alive heartbeats during long reasoning cycles and gracefully emits structured `{"error": "..."}` payloads if an upstream model or tool errors.
+
+### 11. Graph Visualizer & Artifact Engine (`app/graphs/visualizer.py`)
+- **Dynamic Mermaid & PNG Rendering**: Centralized compilation pipeline for generating Mermaid `.mmd` files and compiled `.png` image artifacts directly into `app/static/`.
+- **Domain-Specific Graph Export**: Generates and serves diagrams for all 3 stateful graphs:
+  - Regulatory Decision Graph (`graph.mmd`, `graph.png`)
+  - Autonomous Parallel Research Graph (`research_graph.mmd`, `research_graph.png`)
+  - Dual MCP Intelligence Graph (`mcp_graph_hp.mmd`, `mcp_graph_airbnb.mmd`, `mcp_graph.png`)
+
+### 12. Modern Decoupled Frontend UX (`frontend/`)
+- **Custom MCP Mode Dropdown**: Replaced the hybrid native `<select>` with a custom dropdown (`#mcp-dropdown-trigger` & `#mcp-dropdown-menu`). Completely resolves duplicate emoji rendering (`🏨 🏨` -> `🏨`), OS-level popup collisions, and establishes mutual exclusion with the Agent menu.
+- **Context-Aware Dynamic Parameter Input**: The top navbar `[ Parameters ]` button is automatically displayed only for agents that require configurable parameters (`regulatory`) and hidden for all other agents. Pre-populates form state on click and dynamically binds values to live SSE execution payloads.
+- **WebSocket Handshake Authentication**: Automatically appends `?token=${encodeURIComponent(token)}` to the connection URI, ensuring seamless compatibility with WebSocket JWT authorization.
+- **Schema Normalization**: Fully supports the standardized `user_provided_device_data` attribute while preserving backward compatibility with legacy `userProvidedDeiveceData` payloads.
+
 ---
 
 ## 📁 Project Directory Structure
@@ -372,7 +390,8 @@ langgraph-project/
 │   │   ├── security.py         # Argon2id password hashing & PyJWT token utilities
 │   │   ├── llm.py              # ChatGroq LLM factory with per-node token limit support
 │   │   ├── exceptions.py       # Custom application exceptions and error handlers
-│   │   └── observability.py    # Langfuse callback handlers and RunnableConfig builder
+│   │   ├── observability.py    # Langfuse callback handlers and RunnableConfig builder
+│   │   └── streaming.py        # Centralized async SSE & token streaming event generator
 │   ├── middleware/
 │   │   ├── __init__.py         # Default global middleware pipeline exports
 │   │   ├── base.py             # AgentMiddleware abstract base class & pipeline executor
@@ -400,6 +419,7 @@ langgraph-project/
 │   │   ├── __init__.py
 │   │   ├── routing.py          # Conditional edge routing functions (decide_start_node)
 │   │   ├── builder.py          # GraphBuilder & StateGraph compilation factory
+│   │   ├── visualizer.py       # Centralized Mermaid rendering & PNG graph artifact generator
 │   │   ├── nodes/
 │   │   │   ├── __init__.py
 │   │   │   ├── base.py         # BaseGraphNode abstract class
@@ -421,7 +441,28 @@ langgraph-project/
 │       ├── __init__.py
 │       ├── hybrid_reranker.py  # Lightweight filtering & BM25 retrieval
 │       └── ensemble.py         # Dynamic EnsembleRetriever builder
+├── frontend/                   # Decoupled Standalone ChatGPT-Style SPA (Vanilla JS + ES Modules)
+│   ├── index.html              # Modern multi-agent interface with custom MCP dropdown
+│   ├── css/
+│   │   ├── theme.css           # Design tokens, typography & dark/light palette
+│   │   ├── components.css      # Custom buttons, modals, cards, tags & switch toggles
+│   │   └── chat.css            # Chat layouts, thinking accordions & custom dropdowns
+│   └── js/
+│       ├── config.js           # API route mappings & localStorage persistence keys
+│       ├── api.js              # Fetch wrapper, SSE reader & authenticated WebSocket client
+│       ├── auth.js             # Argon2id signup, login, profile & JWT token management
+│       ├── agents.js           # Agent metadata, capability flags (hasParams) & mode presets
+│       ├── chat.js             # Dynamic agent switcher, param visibility & streaming loop
+│       ├── decisionTree.js     # Regulatory navigator, state inspector & thread eviction
+│       ├── research.js         # Parallel multi-critic runner & dynamic critic hints
+│       ├── mcp.js              # Stdio MCP tool inspector & dual-mode travel/lore runner
+│       ├── sqlAgent.js         # Natural language to SQL runner & interactive data table
+│       ├── topology.js         # Mermaid flowchart drawer & node inspection
+│       └── app.js              # Application bootstrapper, modal management & toast alerts
 ├── scripts/
+│   ├── init_postgres.sql       # Automatic auth_db and agent_db Docker bootstrap script
+│   ├── test_all_endpoints.py   # Comprehensive live endpoint & edge-case test suite (45/45 pass)
+│   ├── test_fe_live.py         # Live frontend simulation, CORS & asset test suite (11/11 pass)
 │   ├── init_db.py              # CLI database table verification script
 │   ├── test_client.py          # Python SSE client testing streaming & interrupt resume
 │   └── test_ws_client.py       # Python WebSocket streaming client
@@ -540,9 +581,22 @@ source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
 
-### 2. Run Test Suite
+### 2. Run Comprehensive Test Suites
+
+#### A. Live Backend Endpoint & Critical Edge-Case Suite (45 / 45 Passed &mdash; 100%)
+Tests all 7 endpoint categories against the live backend (Public Health, Auth/Security, MCP Travel & Lore, Parallel Research, Stateful Regulatory Graph with PostgreSQL checkpointing, Text-to-SQL Agent with caching, and WebSocket security):
 ```bash
-# Run pytest with uv
+python scripts/test_all_endpoints.py
+```
+
+#### B. Frontend Simulation, CORS & Browser Integration Suite (11 / 11 Passed &mdash; 100%)
+Validates HTML delivery, 14 CSS/ES modules, CORS preflight requests, live signup/login/profile flow, SSE streaming, and WebSocket connectivity from `http://localhost:3000`:
+```bash
+python scripts/test_fe_live.py
+```
+
+#### C. Unit & Middleware Tests (Pytest)
+```bash
 uv run pytest
 ```
 
@@ -568,11 +622,14 @@ python3 -m http.server 3000
 
 ## 🐳 Docker & Docker Compose
 
-To run the complete production stack (FastAPI app + PostgreSQL checkpointer):
+To run the complete production stack (FastAPI app + PostgreSQL checkpointer & auth store):
 
 ```bash
 docker compose up --build -d
 ```
+
+> [!NOTE]
+> `docker-compose.yml` automatically mounts [`scripts/init_postgres.sql`](file:///home/sushovan/sushovan/STUDY/Langchain-Langgraph-Notebooks/scripts/init_postgres.sql) into `/docker-entrypoint-initdb.d/`, bootstrapping both `agent_db` (LangGraph checkpointing & chat memory) and `auth_db` (Argon2id user accounts & JWT revocation blacklist) upon container creation.
 
 Check service logs:
 ```bash
@@ -598,13 +655,15 @@ Or test using `curl`:
 ```bash
 curl -N -X POST http://localhost:8000/interact \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_jwt_access_token>" \
   -d '{
     "user_choices": {"device_class": "Class II"},
     "user_input": "What is the 510k pathway requirements for a diagnostic monitor?",
     "useDeviceData": true,
-    "userProvidedDeiveceData": "Digital ECG monitor"
+    "user_provided_device_data": "Digital ECG monitor"
   }'
 ```
+> *(Legacy payloads using `userProvidedDeiveceData` are automatically normalized for backward compatibility).*
 
 ### 2. Test Parallel Research SSE Stream (`/research/stream`)
 ```bash
@@ -637,9 +696,10 @@ curl -N -X POST http://localhost:8000/mcp/stream \
 ```
 
 ### 5. Test WebSocket Streaming (`/ws/interact`)
-Run the WebSocket test script:
+Connect to the authenticated WebSocket endpoint (requires query parameter `token`):
 ```bash
 python scripts/test_ws_client.py
+# Or connect with websockets: ws://localhost:8000/ws/interact?token=<your_jwt_access_token>
 ```
 
 ---
