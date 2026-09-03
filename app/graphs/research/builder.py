@@ -97,24 +97,9 @@ class ResearchGraphBuilder:
 
     def save_visualization(self, output_path: str = "app/static/research_graph.png") -> None:
         """Saves a visual PNG and Mermaid text definition of the research graph."""
-        if self.compiled_graph is None:
-            return
+        from app.graphs.visualizer import export_graph_visualization
 
-        try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            mermaid_path = output_path.replace(".png", ".mmd")
-            with open(mermaid_path, "w", encoding="utf-8") as f:
-                f.write(self.compiled_graph.get_graph().draw_mermaid())
-
-            try:
-                png_bytes = self.compiled_graph.get_graph().draw_mermaid_png()
-                with open(output_path, "wb") as f:
-                    f.write(png_bytes)
-                logger.info(f"Research graph visualization saved to {output_path}")
-            except Exception as pe:
-                logger.debug(f"Mermaid PNG render skipped: {pe}")
-        except Exception as e:
-            logger.warning(f"Could not generate research graph visualization: {e}")
+        export_graph_visualization(self.compiled_graph, output_path)
 
 
 def create_research_graph(checkpointer=None):

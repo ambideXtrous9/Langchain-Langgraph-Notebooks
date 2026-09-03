@@ -187,9 +187,16 @@ class ChatPlatformController {
 
     const selectEl = document.getElementById("mcp-mode-select");
     const iconEl = document.getElementById("mcp-select-icon");
+    const labelEl = document.getElementById("mcp-mode-label");
 
     if (selectEl) selectEl.value = targetMode;
     if (iconEl) iconEl.textContent = targetMode === "harry_potter" ? "⚡" : "🏨";
+    if (labelEl) labelEl.textContent = targetMode === "harry_potter" ? "Harry Potter Lore QA" : "Airbnb Travel Search";
+
+    document.querySelectorAll(".mcp-option").forEach(opt => {
+      const optMode = opt.getAttribute("data-mcp-option");
+      opt.classList.toggle("is-selected", optMode === targetMode);
+    });
 
     // 3. Re-render empty state / suggestion cards if session has no messages
     const session = this.getActiveSession();
@@ -235,12 +242,34 @@ class ChatPlatformController {
         mcpDropdown.style.display = "inline-flex";
         const selectEl = document.getElementById("mcp-mode-select");
         const iconEl = document.getElementById("mcp-select-icon");
+        const labelEl = document.getElementById("mcp-mode-label");
         if (selectEl) selectEl.value = mode;
         if (iconEl) iconEl.textContent = mode === "harry_potter" ? "⚡" : "🏨";
+        if (labelEl) labelEl.textContent = mode === "harry_potter" ? "Harry Potter Lore QA" : "Airbnb Travel Search";
+
+        document.querySelectorAll(".mcp-option").forEach(opt => {
+          const optMode = opt.getAttribute("data-mcp-option");
+          opt.classList.toggle("is-selected", optMode === mode);
+        });
       }
     } else {
       if (badgeEl) badgeEl.innerHTML = agent.badge;
       if (mcpDropdown) mcpDropdown.style.display = "none";
+    }
+
+    // Configure Parameters Button: Only display/enable for agents that require parameter inputs (e.g. FDA Regulatory)
+    const configBtn = document.getElementById("btn-agent-config");
+    if (configBtn) {
+      const hasConfigurableParams = Boolean(agent.hasParams || (agent.params && Object.keys(agent.params).length > 0));
+      configBtn.style.display = hasConfigurableParams ? "inline-flex" : "none";
+      if (hasConfigurableParams) {
+        configBtn.title = `Configure ${agent.name} Parameters`;
+      }
+    }
+
+    const configModal = document.getElementById("agent-config-modal");
+    if (configModal && (!agent.hasParams && (!agent.params || Object.keys(agent.params).length === 0)) && configModal.classList.contains("is-open")) {
+      configModal.classList.remove("is-open");
     }
 
     // Sidebar items active state
@@ -291,13 +320,25 @@ class ChatPlatformController {
     if (!container) return;
 
     if (agent.id === "regulatory") {
+      const p = AGENTS.regulatory?.params || {};
+      const devClass = p.device_class ? p.device_class.split(" ")[0] + " " + (p.device_class.split(" ")[1] || "") : "Class II";
+      const samdStatus = p.is_samd ? "SaMD: ON" : "SaMD: OFF";
       container.style.display = "flex";
       container.innerHTML = `
-        <span class="param-pill is-active" id="chip-param-class" title="Device Class">Class II (510k)</span>
-        <span class="param-pill is-active" id="chip-param-samd" title="Software as Medical Device">SaMD: ON</span>
+        <span class="param-pill is-active" id="chip-param-class" title="Device Class">${devClass}</span>
+        <span class="param-pill is-active" id="chip-param-samd" title="Software as Medical Device">${samdStatus}</span>
         <span class="param-pill" id="chip-param-config" title="Open Agent Configuration Modal">⚙ Parameters</span>
       `;
       document.getElementById("chip-param-config")?.addEventListener("click", () => {
+        const p = AGENTS.regulatory?.params || {};
+        const devClassEl = document.getElementById("cfg-device-class");
+        const predicateEl = document.getElementById("cfg-predicate");
+        const samdEl = document.getElementById("cfg-samd");
+        const specsEl = document.getElementById("cfg-specs");
+        if (devClassEl && p.device_class) devClassEl.value = p.device_class;
+        if (predicateEl) predicateEl.value = p.predicate_device || "";
+        if (samdEl) samdEl.checked = Boolean(p.is_samd);
+        if (specsEl) specsEl.value = p.device_specs || "";
         document.getElementById("agent-config-modal")?.classList.add("is-open");
       });
     } else if (agent.id === "research") {
@@ -656,14 +697,14 @@ class ChatPlatformController {
     // Dropdown Agent Switcher
     const dropdownBtn = document.getElementById("agent-dropdown-trigger");
     const dropdownMenu = document.getElementById("agent-dropdown-menu");
+    const mcpDropdownBtn = document.getElementById("mcp-dropdown-trigger");
+    const mcpDropdownMenu = document.getElementById("mcp-dropdown-menu");
+
     if (dropdownBtn && dropdownMenu) {
       dropdownBtn.addEventListener("click", (e) => {
         e.stopPropagation();
+        if (mcpDropdownMenu) mcpDropdownMenu.classList.remove("is-open");
         dropdownMenu.classList.toggle("is-open");
-      });
-
-      document.addEventListener("click", () => {
-        dropdownMenu.classList.remove("is-open");
       });
 
       document.querySelectorAll(".agent-option").forEach(opt => {
@@ -675,8 +716,30 @@ class ChatPlatformController {
       });
     }
 
-    // Top Navbar MCP Mode Dropdown Selector
-    // Top Navbar MCP Mode Select Dropdown
+    // Top Navbar MCP Mode Custom Dropdown Selector
+    if (mcpDropdownBtn && mcpDropdownMenu) {
+      mcpDropdownBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (dropdownMenu) dropdownMenu.classList.remove("is-open");
+        mcpDropdownMenu.classList.toggle("is-open");
+      });
+
+      document.querySelectorAll(".mcp-option").forEach(opt => {
+        opt.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const targetMode = opt.getAttribute("data-mcp-option");
+          this.switchMCPMode(targetMode);
+          mcpDropdownMenu.classList.remove("is-open");
+        });
+      });
+    }
+
+    // Close any open navbar dropdowns on outside click
+    document.addEventListener("click", () => {
+      if (dropdownMenu) dropdownMenu.classList.remove("is-open");
+      if (mcpDropdownMenu) mcpDropdownMenu.classList.remove("is-open");
+    });
+
     const mcpSelect = document.getElementById("mcp-mode-select");
     if (mcpSelect) {
       mcpSelect.addEventListener("change", (e) => {
@@ -898,15 +961,18 @@ class ChatPlatformController {
     const session = this.getActiveSession();
     const msg = session.messages[msgIdx];
 
+    const p = AGENTS.regulatory?.params || {};
     const payload = {
       user_choices: {
-        device_class: "Class II (510k Premarket Notification)",
-        intended_use: "Clinical monitoring",
-        software_as_medical_device: true,
+        device_class: p.device_class || "Class II (510k Premarket Notification)",
+        intended_use: p.intended_use || "Clinical monitoring",
+        predicate_device: p.predicate_device || "",
+        software_as_medical_device: p.is_samd !== undefined ? p.is_samd : true,
       },
       user_input: userText,
-      useDeviceData: false,
-      userProvidedDeiveceData: "",
+      useDeviceData: Boolean(p.device_specs),
+      user_provided_device_data: p.device_specs || "",
+      userProvidedDeiveceData: p.device_specs || "",
       thread_id: this.activeThreadId || undefined,
     };
 

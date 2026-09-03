@@ -247,8 +247,22 @@ class ChatApp {
     const modal = document.getElementById("agent-config-modal");
     const saveBtn = document.getElementById("config-save-btn");
 
+    const populateInputs = () => {
+      const p = AGENTS.regulatory?.params || {};
+      const devClassEl = document.getElementById("cfg-device-class");
+      const predicateEl = document.getElementById("cfg-predicate");
+      const samdEl = document.getElementById("cfg-samd");
+      const specsEl = document.getElementById("cfg-specs");
+
+      if (devClassEl && p.device_class) devClassEl.value = p.device_class;
+      if (predicateEl) predicateEl.value = p.predicate_device || "";
+      if (samdEl) samdEl.checked = Boolean(p.is_samd);
+      if (specsEl) specsEl.value = p.device_specs || "";
+    };
+
     if (configBtn && modal) {
       configBtn.addEventListener("click", () => {
+        populateInputs();
         modal.classList.add("is-open");
       });
     }
@@ -269,7 +283,7 @@ class ChatApp {
         modal.classList.remove("is-open");
 
         window.dispatchEvent(new CustomEvent("rp360:notify", {
-          detail: { message: "Agent parameters updated.", type: "success" }
+          detail: { message: "Regulatory parameters updated.", type: "success" }
         }));
       });
     }

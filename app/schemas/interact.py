@@ -1,7 +1,7 @@
 """Pydantic Models for LangGraph Interaction, SSE Streaming, and Thread Management."""
 
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class InteractionRequest(BaseModel):
@@ -25,8 +25,19 @@ class InteractionRequest(BaseModel):
     )
     userProvidedDeiveceData: Optional[str] = Field(
         default="",
+        validation_alias=AliasChoices(
+            "userProvidedDeiveceData",
+            "user_provided_device_data",
+            "userProvidedDeviceData",
+        ),
+        serialization_alias="userProvidedDeiveceData",
         description="Raw or structured device data string provided by the user.",
     )
+
+    @property
+    def device_data(self) -> str:
+        """Returns normalized device data string."""
+        return self.userProvidedDeiveceData or ""
 
 
 class DeleteThreadRequest(BaseModel):

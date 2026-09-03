@@ -42,5 +42,18 @@ class AgentState(MessagesState, total=False):
     feedback: str
     useDeviceData: bool
     userProvidedDeiveceData: str
+    user_provided_device_data: str
     chat_history: Annotated[List[AnyMessage], add_messages]
     reviews: Annotated[List[str], operator.add]
+
+
+def get_device_data(state: Dict[str, Any]) -> str:
+    """Safely retrieves device data supporting normalized and legacy typo keys."""
+    if not isinstance(state, dict):
+        return ""
+    return (
+        state.get("user_provided_device_data")
+        or state.get("userProvidedDeviceData")
+        or state.get("userProvidedDeiveceData")
+        or ""
+    )

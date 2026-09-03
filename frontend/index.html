@@ -173,11 +173,42 @@
           </div>
 
           <!-- Top Navbar MCP Mode Select Dropdown -->
-          <div class="mcp-select-container" id="navbar-mcp-dropdown" style="display: none;">
-            <span class="mcp-select-icon" id="mcp-select-icon">⚡</span>
-            <select id="mcp-mode-select" class="mcp-native-select" title="Switch MCP Intelligence Domain">
-              <option value="harry_potter">⚡ Harry Potter Lore QA</option>
-              <option value="airbnb">🏨 Airbnb Travel Search</option>
+          <div class="mcp-dropdown-wrap" id="navbar-mcp-dropdown" style="display: none;">
+            <button type="button" class="mcp-dropdown-btn" id="mcp-dropdown-trigger" title="Switch MCP Intelligence Domain">
+              <span class="mcp-select-icon" id="mcp-select-icon">⚡</span>
+              <span class="mcp-dropdown-label" id="mcp-mode-label">Harry Potter Lore QA</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left: 4px; opacity: 0.7;"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+
+            <!-- Custom MCP Dropdown Menu -->
+            <div class="mcp-dropdown-menu" id="mcp-dropdown-menu">
+              <div class="mcp-option" data-mcp-option="harry_potter">
+                <div class="mcp-option-head">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span>⚡</span>
+                    <span>Harry Potter Lore QA</span>
+                  </div>
+                  <span class="tag brand">Pinecone</span>
+                </div>
+                <div class="mcp-option-desc">Multi-hop vector retrieval & wandlore analysis.</div>
+              </div>
+
+              <div class="mcp-option" data-mcp-option="airbnb">
+                <div class="mcp-option-head">
+                  <div style="display: flex; align-items: center; gap: 6px;">
+                    <span>🏨</span>
+                    <span>Airbnb Travel Search</span>
+                  </div>
+                  <span class="tag clear">OpenBNB</span>
+                </div>
+                <div class="mcp-option-desc">Accommodations, weather forecast & itinerary synthesis.</div>
+              </div>
+            </div>
+
+            <!-- Hidden native select for script/DOM compatibility -->
+            <select id="mcp-mode-select" style="display: none;">
+              <option value="harry_potter">Harry Potter Lore QA</option>
+              <option value="airbnb">Airbnb Travel Search</option>
             </select>
           </div>
         </div>

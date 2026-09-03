@@ -3,32 +3,55 @@
 import json
 import logging
 import uuid
-from typing import Any, Dict
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from typing import Any, Dict, Optional
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from langgraph.types import Command
+from app.core.auth_database import auth_db_manager
 from app.core.observability import flush_langfuse, get_runnable_config
+from app.core.security import decode_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def authenticate_websocket(websocket: WebSocket) -> Optional[Dict[str, Any]]:
+    """Validates JWT access token from query parameters or Authorization header."""
+    token = websocket.query_params.get("token")
+    if not token:
+        auth_header = websocket.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+
+    if not token:
+        return None
+
+    try:
+        payload = decode_token(token)
+        jti = payload.get("jti")
+        if jti and await auth_db_manager.is_token_blacklisted(jti):
+            return None
+        email = payload.get("sub")
+        if not email:
+            return None
+        user = await auth_db_manager.get_user_by_email(email)
+        if not user or not user.get("is_active", True):
+            return None
+        return user
+    except Exception as e:
+        logger.debug(f"WebSocket authentication error: {e}")
+        return None
+
+
 @router.websocket("/ws/interact")
 async def websocket_interact_endpoint(websocket: WebSocket):
-    """Bi-directional WebSocket streaming for LangGraph interactions.
+    """Bi-directional WebSocket streaming for LangGraph interactions."""
+    user = await authenticate_websocket(websocket)
+    if not user:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized: Valid JWT token required.")
+        return
 
-    Protocol:
-    - Client sends:
-        {"action": "start", "user_choices": {...}, "user_input": "...", "useDeviceData": bool, ...}
-      or
-        {"action": "resume", "thread_id": "...", "user_input": "..."}
-    - Server streams:
-        {"type": "thread_id", "thread_id": "..."}
-        {"type": "token", "content": "..."}
-        {"type": "status", "next_nodes": [...], "is_interrupted": bool}
-        {"type": "complete"}
-    """
     await websocket.accept()
-    logger.info("WebSocket client connected.")
+    logger.info(f"WebSocket client connected for user: {user.get('email')}")
 
     graph = getattr(websocket.app.state, "graph", None)
     if graph is None:
@@ -50,9 +73,17 @@ async def websocket_interact_endpoint(websocket: WebSocket):
             user_input = payload.get("user_input", "")
             user_choices = payload.get("user_choices", {})
             use_device = payload.get("useDeviceData", False)
-            device_data = payload.get("userProvidedDeiveceData", "")
+            device_data = (
+                payload.get("user_provided_device_data")
+                or payload.get("userProvidedDeviceData")
+                or payload.get("userProvidedDeiveceData")
+                or ""
+            )
 
-            thread_config = get_runnable_config(thread_id=thread_id)
+            thread_config = get_runnable_config(
+                thread_id=thread_id,
+                metadata={"user_id": user.get("id"), "email": user.get("email")},
+            )
 
             # Send thread_id confirmation
             await websocket.send_json({"type": "thread_id", "thread_id": thread_id})
@@ -72,7 +103,11 @@ async def websocket_interact_endpoint(websocket: WebSocket):
 
                 graph_input = Command(
                     resume=user_input,
-                    update={"useDeviceData": use_device, "userProvidedDeiveceData": device_data},
+                    update={
+                        "useDeviceData": use_device,
+                        "userProvidedDeiveceData": device_data,
+                        "user_provided_device_data": device_data,
+                    },
                 )
             else:
                 graph_input = {
@@ -80,6 +115,7 @@ async def websocket_interact_endpoint(websocket: WebSocket):
                     "feedback": user_input,
                     "useDeviceData": use_device,
                     "userProvidedDeiveceData": device_data,
+                    "user_provided_device_data": device_data,
                     "chat_history": [],
                 }
 

@@ -62,6 +62,18 @@ class ClassifierAgent:
             attempt += 1
             prompt_text = self._build_prompt(current_content, chat_context=chat_context)
 
+            # Modern structured output path
+            if hasattr(self.model, "with_structured_output"):
+                try:
+                    structured_llm = self.model.with_structured_output(Classify)
+                    result = await structured_llm.ainvoke(prompt_text)
+                    if isinstance(result, Classify):
+                        return result.model_dump()
+                    elif isinstance(result, dict) and "classification" in result:
+                        return result
+                except Exception as structured_err:
+                    logger.debug(f"Structured output call skipped/failed: {structured_err}")
+
             try:
                 response = await self.model.ainvoke(prompt_text)
                 raw_text = response.content if hasattr(response, "content") else str(response)

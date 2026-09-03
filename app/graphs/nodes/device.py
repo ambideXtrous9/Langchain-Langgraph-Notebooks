@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from app.core.config import settings
 from app.core.llm import get_llm
 from app.graphs.nodes.base import BaseGraphNode
-from app.schemas.state import AgentState
+from app.schemas.state import AgentState, get_device_data
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class DeviceSummaryNode(BaseGraphNode):
     async def __call__(self, state: AgentState) -> Dict[str, Any]:
         logger.info(f"Executing Node: {self.name}")
 
-        device_data = state.get("userProvidedDeiveceData") or ""
+        device_data = get_device_data(state)
         if not device_data.strip():
             return {
                 "context_docs_str": "No device specifications provided.",

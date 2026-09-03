@@ -15,6 +15,7 @@ export const AGENTS = {
     wsEndpoint: "/ws/interact",
     supportsHITL: true,
     supportsWs: true,
+    hasParams: true,
     inputPlaceholder: "Ask about FDA 510(k)/PMA pathways, device classification, or predicate devices...",
     defaultPrompt: "What FDA testing standards and 510(k) predicate validation data are required for a clinical pulse oximeter?",
     params: {

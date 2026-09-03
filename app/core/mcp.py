@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import shutil
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from app.core.config import settings
@@ -28,6 +28,19 @@ class MCPClientManager:
         """Returns True if MCP servers have been initialized."""
         return self._is_initialized
 
+    @staticmethod
+    def _parse_args(args: Union[List[str], str]) -> List[str]:
+        """Safely parses CLI arguments from JSON string or list."""
+        if isinstance(args, str):
+            try:
+                parsed = json.loads(args)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+            return [args]
+        return list(args) if isinstance(args, list) else [str(args)]
+
     async def initialize(self) -> None:
         """Initializes configured MCP servers during application startup."""
         async with self._lock:
@@ -39,14 +52,7 @@ class MCPClientManager:
 
             # 1. Airbnb MCP Server configuration
             if settings.ENABLE_AIRBNB_MCP:
-                args = settings.AIRBNB_MCP_ARGS
-                if isinstance(args, str):
-                    import json
-                    try:
-                        args = json.loads(args)
-                    except Exception:
-                        args = [args]
-
+                args = self._parse_args(settings.AIRBNB_MCP_ARGS)
                 cmd = shutil.which(settings.AIRBNB_MCP_COMMAND) or settings.AIRBNB_MCP_COMMAND
                 server_configs["airbnb"] = {
                     "transport": "stdio",
@@ -58,14 +64,7 @@ class MCPClientManager:
             if settings.ENABLE_PINECONE_MCP:
                 pinecone_key = os.getenv("PINECONE_API_KEY") or settings.PINECONE_API_KEY
                 if pinecone_key:
-                    args = settings.PINECONE_MCP_ARGS
-                    if isinstance(args, str):
-                        import json
-                        try:
-                            args = json.loads(args)
-                        except Exception:
-                            args = [args]
-
+                    args = self._parse_args(settings.PINECONE_MCP_ARGS)
                     cmd = shutil.which(settings.PINECONE_MCP_COMMAND) or settings.PINECONE_MCP_COMMAND
                     server_configs["pinecone"] = {
                         "transport": "stdio",
@@ -107,7 +106,12 @@ class MCPClientManager:
 
     def get_server_tools(self, server_name: str) -> List[BaseTool]:
         """Returns tools matching a specific server or domain."""
-        return self._tools
+        server_lower = server_name.lower().strip()
+        if server_lower == "airbnb":
+            return [t for t in self._tools if any(k in t.name.lower() for k in ["airbnb", "listing", "stay", "room"])]
+        elif server_lower == "pinecone":
+            return [t for t in self._tools if any(k in t.name.lower() for k in ["pinecone", "record", "rerank", "vector", "index"])]
+        return [t for t in self._tools if server_lower in t.name.lower()]
 
     def get_all_tools(self) -> List[BaseTool]:
         """Returns all registered MCP tools across all connected servers."""
@@ -115,15 +119,16 @@ class MCPClientManager:
 
     def get_server_status(self) -> Dict[str, Any]:
         """Returns metadata status and health info of all registered MCP servers."""
-        return {
-            name: {
+        status = {}
+        for name, cfg in self._servers_config.items():
+            server_tools = self.get_server_tools(name)
+            status[name] = {
                 "type": cfg.get("transport", "stdio"),
                 "status": "connected" if self._tools else "ready",
-                "tools_count": len(self._tools),
-                "tools": [t.name for t in self._tools],
+                "tools_count": len(server_tools),
+                "tools": [t.name for t in server_tools],
             }
-            for name, cfg in self._servers_config.items()
-        }
+        return status
 
     async def shutdown(self) -> None:
         """Gracefully cleans up MCP client resources upon application shutdown."""

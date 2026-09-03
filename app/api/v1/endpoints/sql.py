@@ -1,5 +1,6 @@
 """SQL Agent Endpoint for Natural Language Database Queries."""
 
+import asyncio
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.agents.sql_agent import execute_sql_query
@@ -24,7 +25,8 @@ async def get_sql_query_endpoint(
             metadata={"user_id": current_user.id, "email": current_user.email},
         )
 
-        final_answer, sql_query, table_result = execute_sql_query(
+        final_answer, sql_query, table_result = await asyncio.to_thread(
+            execute_sql_query,
             query=request.query,
             db_uri=request.db_uri,
             config=run_config,

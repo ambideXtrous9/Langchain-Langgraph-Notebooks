@@ -65,6 +65,7 @@ async def lifespan(app: FastAPI):
     os.makedirs("app/static", exist_ok=True)
     builder.save_visualization("app/static/graph.png")
     research_builder.save_visualization("app/static/research_graph.png")
+    mcp_travel_builder.save_visualization("app/static/mcp_graph.png")
 
     logger.info("Application initialization complete. Ready to serve requests.")
 

@@ -1,5 +1,6 @@
 """Enhanced Retriever with Hybrid Search (BM25 + Semantic) and Source-Aware Reranking."""
 
+import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 import numpy as np
@@ -198,4 +199,4 @@ class EnhancedGDNCRetriever(BaseRetriever):
 
     async def _aget_relevant_documents(self, query: str, *, run_manager=None) -> List[Document]:
         """Required asynchronous method for BaseRetriever."""
-        return self.get_relevant_documents(query)
+        return await asyncio.to_thread(self.get_relevant_documents, query)

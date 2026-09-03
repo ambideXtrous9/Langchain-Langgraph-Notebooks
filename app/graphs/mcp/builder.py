@@ -47,10 +47,10 @@ class MCPTravelGraphBuilder:
         logger.info("Assembling MCP Airbnb Travel Multi-Agent Graph...")
         builder = StateGraph(MCPTravelState)
 
-        # 1. Add Nodes
+        # 1. Add Nodes (defer=True on tourAgent to ensure both parallel branches complete)
         builder.add_node("airbnbAgent", airbnb_agent_node)
         builder.add_node("weatherAgent", weather_agent_node)
-        builder.add_node("tourAgent", tour_guide_node)
+        builder.add_node("tourAgent", tour_guide_node, defer=True)
 
         # 2. Parallel fan-out
         builder.add_edge(START, "airbnbAgent")
@@ -80,26 +80,13 @@ class MCPTravelGraphBuilder:
 
     def save_visualization(self, output_path: str = "app/static/mcp_graph.png") -> None:
         """Saves visual representations of both MCP sub-graphs to disk."""
-        try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            # Save HP diagram
-            hp_path = output_path.replace(".png", "_hp.mmd")
-            with open(hp_path, "w", encoding="utf-8") as f:
-                f.write(self.get_mermaid_graph(mode="harry_potter"))
+        from app.graphs.visualizer import export_graph_visualization
 
-            # Save Airbnb diagram
-            airbnb_path = output_path.replace(".png", "_airbnb.mmd")
-            with open(airbnb_path, "w", encoding="utf-8") as f:
-                f.write(self.get_mermaid_graph(mode="airbnb"))
-
-            # Save default
-            default_path = output_path.replace(".png", ".mmd")
-            with open(default_path, "w", encoding="utf-8") as f:
-                f.write(self.get_mermaid_graph(mode="harry_potter"))
-
-            logger.info(f"MCP graph visualizations saved to {output_path}")
-        except Exception as e:
-            logger.warning(f"Could not generate MCP graph visualization: {e}")
+        hp_graph = self.build_hp_graph()
+        airbnb_graph = self.build_airbnb_graph()
+        export_graph_visualization(hp_graph, output_path.replace(".png", "_hp.png"))
+        export_graph_visualization(airbnb_graph, output_path.replace(".png", "_airbnb.png"))
+        export_graph_visualization(hp_graph, output_path)
 
 
 def create_mcp_travel_graph(mode: str = "harry_potter", checkpointer: Optional[BaseCheckpointSaver] = None) -> CompiledStateGraph:

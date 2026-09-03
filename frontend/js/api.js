@@ -178,7 +178,9 @@ class ApiClient {
     const baseUrl = getApiBase();
     const wsProto = baseUrl.startsWith("https") ? "wss:" : "ws:";
     const host = baseUrl.replace(/^https?:\/\//, "");
-    const wsUrl = `${wsProto}//${host}${endpoint}`;
+    const token = this.getToken();
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+    const wsUrl = `${wsProto}//${host}${endpoint}${tokenParam}`;
 
     const ws = new WebSocket(wsUrl);
 

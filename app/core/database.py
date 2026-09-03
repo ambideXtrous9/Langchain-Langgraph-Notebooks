@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 from contextlib import asynccontextmanager
 from psycopg_pool import AsyncConnectionPool
+from psycopg import sql
 from langchain_postgres import PostgresChatMessageHistory
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.memory import MemorySaver
@@ -81,15 +82,17 @@ class DatabaseManager:
         async with self.pool.connection() as conn:
             yield conn
 
-    async def get_chat_history(self, session_id: str) -> PostgresChatMessageHistory:
+    async def get_chat_history(
+        self, session_id: str, conn=None
+    ) -> PostgresChatMessageHistory:
         """Returns a PostgresChatMessageHistory instance for a given session."""
         if self._is_in_memory or not self.pool:
             raise RuntimeError("PostgresChatMessageHistory requires a connected PostgreSQL database.")
-        conn = await self.pool.getconn()
+        connection = conn or await self.pool.getconn()
         return PostgresChatMessageHistory(
             settings.TABLE_NAME,
             session_id,
-            async_connection=conn,
+            async_connection=connection,
         )
 
     async def delete_chat_session(self, session_id: str) -> bool:
@@ -97,7 +100,9 @@ class DatabaseManager:
         if self._is_in_memory or not self.pool:
             return False
 
-        query = f"DELETE FROM {settings.TABLE_NAME} WHERE session_id = %s"
+        query = sql.SQL("DELETE FROM {} WHERE session_id = %s").format(
+            sql.Identifier(settings.TABLE_NAME)
+        )
         async with self.pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(query, (session_id,))

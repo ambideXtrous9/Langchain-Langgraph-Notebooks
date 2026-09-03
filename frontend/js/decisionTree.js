@@ -101,6 +101,7 @@ class DecisionTreeController {
       },
       user_input: userInput,
       useDeviceData: useDeviceData,
+      user_provided_device_data: deviceSpecs,
       userProvidedDeiveceData: deviceSpecs,
       thread_id: this.activeThreadId || undefined,
     };
@@ -323,6 +324,7 @@ class DecisionTreeController {
           thread_id: this.activeThreadId,
           user_input: formData.user_input,
           useDeviceData: formData.useDeviceData,
+          user_provided_device_data: formData.user_provided_device_data || formData.userProvidedDeiveceData,
           userProvidedDeiveceData: formData.userProvidedDeiveceData,
         }
       : {
@@ -330,6 +332,7 @@ class DecisionTreeController {
           user_choices: formData.user_choices,
           user_input: formData.user_input,
           useDeviceData: formData.useDeviceData,
+          user_provided_device_data: formData.user_provided_device_data || formData.userProvidedDeiveceData,
           userProvidedDeiveceData: formData.userProvidedDeiveceData,
         };
 

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_postgres import PostgresChatMessageHistory
 from app.core.config import settings
+from app.core.database import db_manager
 from app.core.observability import flush_langfuse, get_runnable_config
 from app.agents.react_agent import execute_generic_chat
 from app.schemas.chat import (
@@ -68,8 +69,10 @@ async def generic_chat_endpoint(
                     config=run_config,
                 )
 
-                await history.aadd_messages([HumanMessage(content=req.user_input)])
-                await history.aadd_messages([AIMessage(content=aimessage)])
+                await history.aadd_messages([
+                    HumanMessage(content=req.user_input),
+                    AIMessage(content=aimessage),
+                ])
         else:
             # In-memory fallback for development/testing
             msgs = _in_memory_chat_history.get(session_id, [])
@@ -106,22 +109,12 @@ async def delete_session_endpoint(
         session_id = _normalize_session_id(req.session_id)
 
         if db_pool:
-            query_check = f"SELECT COUNT(*) FROM {settings.TABLE_NAME} WHERE session_id = %s"
-            query_delete = f"DELETE FROM {settings.TABLE_NAME} WHERE session_id = %s"
-
-            async with db_pool.connection() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(query_check, (session_id,))
-                    row = await cur.fetchone()
-                    count = row[0] if row else 0
-
-                    if count == 0:
-                        raise HTTPException(
-                            status_code=status.HTTP_404_NOT_FOUND,
-                            detail="No chat session found with this ID",
-                        )
-
-                    await cur.execute(query_delete, (session_id,))
+            deleted = await db_manager.delete_chat_session(session_id)
+            if not deleted:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No chat session found with this ID",
+                )
 
             return DeleteSessionResponse(
                 message="Chat session deleted successfully",
