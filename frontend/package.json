@@ -1,7 +1,7 @@
 {
-  "name": "rp360-frontend",
+  "name": "agentsphere-frontend",
   "version": "1.0.0",
-  "description": "Standalone ChatGPT-style Multi-Agent Frontend with RP360 Design System",
+  "description": "Standalone Multi-Agent Cockpit with AgentSphere Design System",
   "scripts": {
     "dev": "npx serve -l 3000 .",
     "start": "npx serve -l 3000 .",

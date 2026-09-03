@@ -18,13 +18,13 @@ def test_pii_middleware_mask_strategy():
     pii = PIIMiddleware(strategy="mask")
 
     raw_text = (
-        "Contact investigator dr.smith@fda-trial.gov at +1 (555) 234-5678. "
+        "Contact investigator dr.smith@audit-trial.org at +1 (555) 234-5678. "
         "Patient SSN is 123-45-6789 and Medical ID is MRN:REC-987654."
     )
     sanitized = pii.sanitize_text(raw_text)
 
     assert "[EMAIL_REDACTED]" in sanitized
-    assert "dr.smith@fda-trial.gov" not in sanitized
+    assert "dr.smith@audit-trial.org" not in sanitized
     assert "[PHONE_REDACTED]" in sanitized
     assert "(555) 234-5678" not in sanitized
     assert "[SSN_REDACTED]" in sanitized
@@ -119,7 +119,7 @@ async def test_hitl_middleware_state_flagging():
 
     state = {}
     tool_calls = [
-        {"name": "fetch_fda_guidance", "args": {"topic": "catheter"}},
+        {"name": "fetch_policy_guidance", "args": {"topic": "telemetry"}},
         {"name": "execute_sql_mutation", "args": {"query": "DROP TABLE audit_logs;"}},
     ]
 
@@ -159,12 +159,12 @@ async def test_summarization_middleware_message_trigger():
     )
 
     messages = [
-        SystemMessage(content="You are an FDA Regulatory Expert."),
-        HumanMessage(content="Device A is a Class II dental drill."),
-        AIMessage(content="510(k) pathway is recommended."),
-        HumanMessage(content="Device B is an implantable pacemaker."),
-        AIMessage(content="PMA pathway is recommended."),
-        HumanMessage(content="What about Device C?"),
+        SystemMessage(content="You are a Policy & Standards Expert."),
+        HumanMessage(content="System A is a Tier 1 telemetry tool."),
+        AIMessage(content="Standard controls pathway is recommended."),
+        HumanMessage(content="System B is an autonomous cloud platform."),
+        AIMessage(content="Tier 3 verification pathway is recommended."),
+        HumanMessage(content="What about System C?"),
     ]
 
     state, compressed = await summarizer.before_model({}, messages)
@@ -174,8 +174,8 @@ async def test_summarization_middleware_message_trigger():
     assert len(compressed) == 4
     assert isinstance(compressed[0], SystemMessage)
     assert "[Context Summary" in compressed[1].content
-    assert compressed[2].content == "PMA pathway is recommended."
-    assert compressed[3].content == "What about Device C?"
+    assert compressed[2].content == "Tier 3 verification pathway is recommended."
+    assert compressed[3].content == "What about System C?"
 
 
 # ==============================================================================
@@ -189,13 +189,13 @@ async def test_middleware_pipeline_full_chain():
         RateLimitMiddleware(max_requests_per_window=10, window_seconds=60),
         PIIMiddleware(strategy="mask"),
         SummarizationMiddleware(trigger=[("messages", 4)], preserve_recent_count=2),
-        HumanInTheLoopMiddleware(sensitive_tools=["submit_fda_filing"]),
+        HumanInTheLoopMiddleware(sensitive_tools=["submit_compliance_audit"]),
     ])
 
     # 1. before_agent hook
     state = {
         "user_id": "dr_smith",
-        "user_input": "My email is dr.smith@clinic.com. Filing for device.",
+        "user_input": "My email is dr.smith@clinic.com. Filing for system.",
     }
     state = await pipeline.run_before_agent(state)
     assert "[EMAIL_REDACTED]" in state["user_input"]
@@ -212,13 +212,13 @@ async def test_middleware_pipeline_full_chain():
     assert state.get("messages_summarized") is True
 
     # 3. before_tools hook
-    tool_calls = [{"name": "submit_fda_filing", "args": {"docket": "FDA-2026"}}]
+    tool_calls = [{"name": "submit_compliance_audit", "args": {"docket": "AUDIT-2026"}}]
     state, _ = await pipeline.run_before_tools(state, tool_calls)
     assert state.get("human_approval_required") is True
 
     # 4. after_model hook
     state, response = await pipeline.run_after_model(
         state,
-        AIMessage(content="Contact support at help@fda.gov for docket info.")
+        AIMessage(content="Contact support at help@standards.org for audit info.")
     )
     assert "[EMAIL_REDACTED]" in response.content

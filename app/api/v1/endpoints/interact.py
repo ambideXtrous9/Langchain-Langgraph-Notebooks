@@ -35,13 +35,13 @@ async def stream_graph_events(
     device_name = ""
     if isinstance(inputs, dict):
         user_input = inputs.get("feedback") or ""
-        device_name = get_device_data(inputs) or inputs.get("user_choices", {}).get("device_class", "") or "medical device"
+        device_name = get_device_data(inputs) or inputs.get("user_choices", {}).get("system_tier", "") or inputs.get("user_choices", {}).get("device_class", "") or "enterprise system"
     elif hasattr(inputs, "resume"):
         user_input = str(inputs.resume)
-        device_name = "medical device"
+        device_name = "enterprise system"
 
     if not user_input:
-        user_input = "regulatory inquiry"
+        user_input = "policy inquiry"
 
     logger.info(f"--- Starting Graph Stream for Thread ID: {thread_id} ---")
 
@@ -56,17 +56,17 @@ async def stream_graph_events(
 
     def node_start_hint(node_name: str) -> str:
         if node_name == "user_initpath":
-            return f"Routing Engine: Parsing user intent, device parameters, and regulatory path for '{user_input[:40]}...'"
+            return f"Routing Engine: Parsing user intent, system parameters, and policy path for '{user_input[:40]}...'"
         elif node_name == "classify_node":
-            return f"Structured Classifier: Validating regulatory schema and routing compliance for '{user_input[:40]}...'"
+            return f"Structured Classifier: Validating policy schema and routing compliance for '{user_input[:40]}...'"
         elif node_name == "device_summary":
-            return f"Device Profiler: Synthesizing specifications and classification tier for '{device_name}'..."
+            return f"System Profiler: Synthesizing specifications and classification tier for '{device_name}'..."
         elif node_name == "knowledge_base":
             return f"Knowledge Base: Performing BM25 + dense retrieval for '{user_input[:40]}...'"
         elif node_name == "reason_llm":
-            return f"Regulatory Expert: Synthesizing compliance pathway and 510(k)/PMA reasoning for '{user_input[:40]}...'"
+            return f"Policy Expert: Synthesizing compliance pathway and standard specification reasoning for '{user_input[:40]}...'"
         elif node_name == "process_feedback":
-            return "Human-in-the-Loop: Awaiting user feedback/authorization on regulatory guidance..."
+            return "Human-in-the-Loop: Awaiting user feedback/authorization on policy guidance..."
         return f"Executing Node: {node_name} for '{user_input[:35]}...'"
 
     def node_end_hint(node_name: str, output: Dict[str, Any]) -> str:
@@ -75,11 +75,11 @@ async def stream_graph_events(
             choice_str = cls_val.get("user_choice") or cls_val.get("decision_path") or "analyzed"
             return f"Structured Classifier: Confirmed route '{choice_str}' for '{user_input[:35]}...'"
         elif node_name == "device_summary":
-            return f"Device Profiler: Generated technical profile for '{device_name}'"
+            return f"System Profiler: Generated technical profile for '{device_name}'"
         elif node_name == "knowledge_base":
-            return "Knowledge Base: Matched relevant FDA regulations and guidance documents"
+            return "Knowledge Base: Matched relevant policy standards and guidance documents"
         elif node_name == "reason_llm":
-            return f"Regulatory Expert: Finalized compliance recommendations for '{device_name}'"
+            return f"Policy Expert: Finalized compliance recommendations for '{device_name}'"
         return f"Completed {node_name} for '{user_input[:35]}...'"
 
     def tool_start_hint(tool_name: str, tool_input: Any) -> str:
@@ -88,10 +88,10 @@ async def stream_graph_events(
             if isinstance(tool_input, dict)
             else str(tool_input)
         )
-        return f"Tool [{tool_name}]: Querying regulatory predicate data for '{query_param[:40]}...'..."
+        return f"Tool [{tool_name}]: Querying benchmark data for '{query_param[:40]}...'..."
 
     def tool_end_hint(tool_name: str, tool_output: Any) -> str:
-        return f"Tool [{tool_name}]: Regulatory intelligence retrieved for '{device_name}'"
+        return f"Tool [{tool_name}]: Benchmark intelligence retrieved for '{device_name}'"
 
     async def fallback_resolver():
         current_state = await graph.aget_state(config)
@@ -109,7 +109,7 @@ async def stream_graph_events(
         graph=graph,
         inputs=inputs,
         config=config,
-        stream_tags={"RegulatoryExpert", "reason_llm"},
+        stream_tags={"PolicyExpert", "reason_llm"},
         graph_nodes=graph_nodes,
         initial_event={"thread_id": thread_id},
         node_start_hint=node_start_hint,

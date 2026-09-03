@@ -1,5 +1,5 @@
 /**
- * RP360 // Model Context Protocol (MCP) Multi-Agent Intelligence
+ * AgentSphere // Model Context Protocol (MCP) Multi-Agent Intelligence
  * Connects to /mcp/tools, /mcp/travel/stream (SSE), /mcp/travel/run, and /mcp/travel/mermaid.
  */
 
@@ -42,7 +42,7 @@ class MCPController {
       copyBtn.addEventListener("click", () => {
         if (this.accumulatedReport) {
           navigator.clipboard.writeText(this.accumulatedReport);
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: "Accommodation & itinerary guide copied.", type: "success" }
           }));
         }
@@ -173,7 +173,7 @@ class MCPController {
     const topic = queryInput ? queryInput.value.trim() : "";
 
     if (!topic) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "Please enter query criteria & destination.", type: "error" }
       }));
       return;
@@ -201,7 +201,7 @@ class MCPController {
 
   async runStreamingTravel(topic) {
     this.abortController = new AbortController();
-    const mode = localStorage.getItem("rp360_mcp_mode") || "harry_potter";
+    const mode = localStorage.getItem("agentsphere_mcp_mode") || "harry_potter";
     const modeDesc = mode === "harry_potter" ? "Harry Potter Universe QA (Pinecone MCP)" : "Airbnb Lodging Search (OpenBNB MCP)";
     this.appendConsoleLog(`Dispatching MCP pipeline [${modeDesc}] for: "${topic}"...`, "info");
 
@@ -232,14 +232,14 @@ class MCPController {
         if (data.event === "error" || data.error) {
           const errText = data.data || data.error;
           this.appendConsoleLog(`MCP Error: ${errText}`, "tool");
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: `MCP agent error: ${errText}`, type: "error" }
           }));
         }
       },
       onDone: () => {
         this.onStreamCompleted();
-        window.dispatchEvent(new CustomEvent("rp360:notify", {
+        window.dispatchEvent(new CustomEvent("agentsphere:notify", {
           detail: { message: "MCP multi-agent response ready.", type: "success" }
         }));
       },
@@ -251,7 +251,7 @@ class MCPController {
   }
 
   async runSynchronousTravel(topic) {
-    const mode = localStorage.getItem("rp360_mcp_mode") || "harry_potter";
+    const mode = localStorage.getItem("agentsphere_mcp_mode") || "harry_potter";
     this.appendConsoleLog(`Executing synchronous MCP graph [mode=${mode}] for: "${topic}"...`, "info");
 
     try {
@@ -265,12 +265,12 @@ class MCPController {
       this.appendConsoleLog("MCP multi-agent synthesis complete.", "success");
       ["hpSearchAgent", "hpLoreScholar", "airbnbAgent", "weatherAgent", "tourAgent"].forEach(a => this.setAgentState(a, "completed"));
 
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "MCP response generated successfully.", type: "success" }
       }));
     } catch (err) {
       this.appendConsoleLog(`Execution failed: ${err.message}`, "tool");
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: `MCP execution failed: ${err.message}`, type: "error" }
       }));
     } finally {

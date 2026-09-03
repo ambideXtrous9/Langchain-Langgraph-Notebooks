@@ -1,5 +1,5 @@
 /**
- * RP360 // Authentication & Access Controller
+ * AgentSphere // Authentication & Access Controller
  * Argon2id Hashing, JWT Bearer Token, Blacklisting on Logout, Password Reset.
  */
 
@@ -14,7 +14,7 @@ class AuthManager {
 
   init() {
     // Listen for auth expired event
-    window.addEventListener("rp360:auth_expired", () => {
+    window.addEventListener("agentsphere:auth_expired", () => {
       this.handleSessionExpired();
     });
   }
@@ -99,7 +99,7 @@ class AuthManager {
       this.currentUser = null;
       localStorage.removeItem(CONFIG.STORAGE_KEYS.USER_PROFILE);
       this.updateUI();
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "Logged out. Token has been revoked.", type: "info" }
       }));
     }
@@ -128,7 +128,7 @@ class AuthManager {
     api.setToken(null);
     this.currentUser = null;
     this.updateUI();
-    window.dispatchEvent(new CustomEvent("rp360:notify", {
+    window.dispatchEvent(new CustomEvent("agentsphere:notify", {
       detail: { message: "Your session has expired. Please sign in again.", type: "error" }
     }));
   }
@@ -146,7 +146,7 @@ class AuthManager {
     const logoutBtn = document.getElementById("logout-btn");
 
     if (this.currentUser) {
-      const email = this.currentUser.email || "user@rp360.io";
+      const email = this.currentUser.email || "user@agentsphere.local";
       const name = this.currentUser.full_name || email;
       const initials = name
         .split(" ")

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class DeviceSummaryNode(BaseGraphNode):
-    """Processes, extracts, and summarizes user-provided medical device metadata."""
+    """Processes, extracts, and summarizes user-provided system architecture metadata."""
 
     name: str = "device_summary"
 
@@ -24,26 +24,26 @@ class DeviceSummaryNode(BaseGraphNode):
         device_data = get_device_data(state)
         if not device_data.strip():
             return {
-                "context_docs_str": "No device specifications provided.",
+                "context_docs_str": "No system specifications provided.",
             }
 
         try:
             prompt = (
-                "You are an FDA medical device technical analyst. Analyze and summarize the following "
-                "device data into key regulatory parameters (Intended Use, Technology, Risk Classification, Predicates):\n\n"
+                "You are an enterprise system and technical architecture analyst. Analyze and summarize the following "
+                "system data into key architecture parameters (Intended Use, Core Technology, System Tier, Baseline References):\n\n"
                 f"{device_data}"
             )
             response = await self.model.ainvoke(prompt)
             summary_content = response.content if hasattr(response, "content") else str(response)
 
             existing_context = state.get("context_docs_str") or ""
-            updated_context = f"{existing_context}\n\n[Device Specification Summary]:\n{summary_content}".strip()
+            updated_context = f"{existing_context}\n\n[System Specification Summary]:\n{summary_content}".strip()
 
             return {"context_docs_str": updated_context}
 
         except Exception as e:
-            logger.warning(f"Device summary generation failed: {e}. Passing raw device data.")
-            return {"context_docs_str": f"[Raw Device Data]: {device_data}"}
+            logger.warning(f"System summary generation failed: {e}. Passing raw specification data.")
+            return {"context_docs_str": f"[Raw System Data]: {device_data}"}
 
 
 device_summary_instance = DeviceSummaryNode()

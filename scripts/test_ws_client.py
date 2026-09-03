@@ -15,8 +15,8 @@ async def test_websocket_stream(uri: str = "ws://localhost:8000/ws/interact"):
             # 1. Start initial conversation
             start_payload = {
                 "action": "start",
-                "user_choices": {"device_class": "Class II", "type": "SaMD"},
-                "user_input": "What are the cybersecurity guidelines for medical device software?",
+                "user_choices": {"system_tier": "Tier 2", "type": "Autonomous Cloud Engine"},
+                "user_input": "What are the cybersecurity guidelines for enterprise cloud architectures?",
                 "useDeviceData": False,
             }
             await websocket.send(json.dumps(start_payload))
@@ -46,7 +46,7 @@ async def test_websocket_stream(uri: str = "ws://localhost:8000/ws/interact"):
                         resume_payload = {
                             "action": "resume",
                             "thread_id": thread_id,
-                            "user_input": "Please provide guidance on FDA postmarket cybersecurity management.",
+                            "user_input": "Please provide guidance on continuous compliance and audit management.",
                         }
                         await websocket.send(json.dumps(resume_payload))
                     else:

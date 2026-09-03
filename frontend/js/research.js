@@ -1,5 +1,5 @@
 /**
- * RP360 // Autonomous Parallel Multi-Critic Research Engine
+ * AgentSphere // Autonomous Parallel Multi-Critic Research Engine
  * Connects to /research/stream (SSE), /research/run, and /research/mermaid.
  */
 
@@ -37,7 +37,7 @@ class ResearchController {
       copyBtn.addEventListener("click", () => {
         if (this.accumulatedReport) {
           navigator.clipboard.writeText(this.accumulatedReport);
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: "Research publication copied to clipboard.", type: "success" }
           }));
         }
@@ -137,7 +137,7 @@ class ResearchController {
     const topic = topicInput ? topicInput.value.trim() : "";
 
     if (!topic) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "Please enter a research topic or select a template.", type: "error" }
       }));
       return;
@@ -198,7 +198,7 @@ class ResearchController {
 
         if (data.error) {
           this.appendConsoleLog(`Pipeline Error: ${data.error}`, "tool");
-          window.dispatchEvent(new CustomEvent("rp360:notify", {
+          window.dispatchEvent(new CustomEvent("agentsphere:notify", {
             detail: { message: `Research pipeline error: ${data.error}`, type: "error" }
           }));
         }
@@ -206,7 +206,7 @@ class ResearchController {
       onDone: () => {
         this.appendConsoleLog("Parallel Research Publication synthesized and audited.", "success");
         this.onStreamCompleted();
-        window.dispatchEvent(new CustomEvent("rp360:notify", {
+        window.dispatchEvent(new CustomEvent("agentsphere:notify", {
           detail: { message: "Autonomous research publication ready.", type: "success" }
         }));
       },
@@ -233,12 +233,12 @@ class ResearchController {
       const stages = ["planner", "approver", "researcher_dispatcher", "researcher", "synthesizer", "fact_critic", "style_critic_1", "style_critic_2", "publisher"];
       stages.forEach(s => this.setStageState(s, "completed"));
 
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "Research execution completed successfully.", type: "success" }
       }));
     } catch (err) {
       this.appendConsoleLog(`Execution failed: ${err.message}`, "tool");
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: `Research failed: ${err.message}`, type: "error" }
       }));
     } finally {
@@ -258,7 +258,7 @@ class ResearchController {
 
   downloadReport() {
     if (!this.accumulatedReport) {
-      window.dispatchEvent(new CustomEvent("rp360:notify", {
+      window.dispatchEvent(new CustomEvent("agentsphere:notify", {
         detail: { message: "No report content to download.", type: "error" }
       }));
       return;
@@ -269,7 +269,7 @@ class ResearchController {
     const a = document.createElement("a");
     const safeTopic = (this.activeTopic || "research_report").replace(/[^a-z0-9]/gi, "_").toLowerCase();
     a.href = url;
-    a.download = `RP360_Research_${safeTopic}.md`;
+    a.download = `AgentSphere_Research_${safeTopic}.md`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

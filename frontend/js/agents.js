@@ -1,51 +1,51 @@
 /**
- * RP360 // Multi-Agent Definitions & Configurations
+ * AgentSphere // Multi-Agent Definitions & Configurations
  * Encapsulates metadata, endpoint mappings, placeholders, and default prompt templates for all 5 backend agents.
  */
 
 export const AGENTS = {
-  regulatory: {
-    id: "regulatory",
-    name: "FDA Regulatory Navigator",
-    badge: "STATEFUL &middot; HITL",
+  policy: {
+    id: "policy",
+    name: "Policy & Standards Navigator",
+    badge: "SYSTEM AUDIT &middot; HITL",
     icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
-    description: "Evaluates medical device specifications, 510(k)/PMA pathways, predicate data, and Human-in-the-Loop review checkpoints with PostgreSQL memory.",
+    description: "Evaluates system architecture specifications, policy compliance standards, benchmark data, and Human-in-the-Loop review checkpoints with PostgreSQL memory.",
     color: "var(--brand)",
     endpoint: "/interact",
     wsEndpoint: "/ws/interact",
     supportsHITL: true,
     supportsWs: true,
     hasParams: true,
-    inputPlaceholder: "Ask about FDA 510(k)/PMA pathways, device classification, or predicate devices...",
-    defaultPrompt: "What FDA testing standards and 510(k) predicate validation data are required for a clinical pulse oximeter?",
+    inputPlaceholder: "Ask about policy compliance tiers, system architecture standards, or benchmark references...",
+    defaultPrompt: "What security controls and reference validation benchmarks are required for an enterprise data pipeline?",
     params: {
-      device_class: "Class II (510k Premarket Notification)",
-      intended_use: "Continuous pulse oximetry monitoring for clinical ICU patients",
-      predicate_device: "",
-      is_samd: true,
-      use_device_data: false,
-      device_specs: "",
+      system_tier: "Tier 2 (Advanced Verification Standards)",
+      intended_use: "Continuous cloud telemetry monitoring and identity verification",
+      reference_standard: "",
+      is_autonomous: true,
+      use_system_data: false,
+      system_specs: "",
     },
     suggestions: [
       {
-        title: "FDA 510(k) Pulse Oximeter Criteria",
-        desc: "Analyze testing standards & predicate requirements for ICU oximetry.",
-        prompt: "What FDA testing standards and 510(k) predicate validation data are required for a clinical pulse oximeter?"
+        title: "Tier 2 Verification Criteria",
+        desc: "Analyze security controls & benchmark validation for telemetry pipelines.",
+        prompt: "What security controls and reference validation benchmarks are required for an enterprise data pipeline?"
       },
       {
-        title: "SaMD Cybersecurity Premarket Guidance",
-        desc: "Review 2023 FDA cybersecurity documentation requirements.",
-        prompt: "What cybersecurity and FDA 2023 premarket guidance documentation is needed for Software as a Medical Device (SaMD)?"
+        title: "Autonomous AI Cloud Guidance",
+        desc: "Review enterprise AI pre-deployment verification requirements.",
+        prompt: "What governance and pre-deployment verification documentation is needed for Autonomous Cloud Systems?"
       },
       {
-        title: "ISO 10993 Biocompatibility Testing",
-        desc: "Evaluate patient-contacting sensor probe biocompatibility.",
-        prompt: "Analyze biocompatibility testing under ISO 10993 for patient-contacting pulse oximeter probes."
+        title: "ISO 27001 Security Controls",
+        desc: "Evaluate distributed cluster telemetry security.",
+        prompt: "Analyze security verification controls under ISO/IEC 27001 for distributed systems."
       },
       {
-        title: "21 CFR 870.2700 Pathway Analysis",
-        desc: "Examine clinical performance validation benchmarks.",
-        prompt: "Evaluate clinical performance validation requirements under 21 CFR 870.2700."
+        title: "NIST 800-53 Baseline Audit",
+        desc: "Examine system performance validation benchmarks.",
+        prompt: "Evaluate audit compliance validation requirements under NIST SP 800-53."
       }
     ]
   },
@@ -60,29 +60,29 @@ export const AGENTS = {
     endpoint: "/research/stream",
     syncEndpoint: "/research/run",
     supportsHITL: false,
-    inputPlaceholder: "Enter deep research topic (e.g. Surgical robotic stapler safety recalls & MAUDE trends)...",
-    defaultPrompt: "Recent FDA safety communications and recall trends on surgical robotic staplers.",
+    inputPlaceholder: "Enter deep research topic (e.g. Distributed cloud consensus protocols & security advisories)...",
+    defaultPrompt: "Recent security advisories and resilience trends in cloud container orchestration.",
     params: {},
     suggestions: [
       {
-        title: "Robotic Stapler Safety Recalls",
-        desc: "Investigate FDA safety communications & recall patterns.",
-        prompt: "Recent FDA safety communications and recall trends on surgical robotic staplers."
+        title: "Cloud Container Resilience",
+        desc: "Investigate security advisories & resilience patterns.",
+        prompt: "Recent security advisories and resilience trends in cloud container orchestration."
       },
       {
-        title: "AI/ML Diagnostic 510(k) Trends",
-        desc: "Examine premarket clearance trends for medical AI models.",
-        prompt: "AI/ML diagnostic medical software 510(k) premarket clearance requirements 2024-2026."
+        title: "Autonomous AI Governance",
+        desc: "Examine validation frameworks for enterprise models.",
+        prompt: "Enterprise AI governance standards and validation requirements 2024-2026."
       },
       {
-        title: "EU MDR vs US FDA PMS Obligations",
-        desc: "Compare post-market surveillance & clinical evaluation.",
-        prompt: "EU MDR vs US FDA Post-Market Surveillance (PMS) reporting obligations."
+        title: "SOC 2 vs ISO 27001 Audits",
+        desc: "Compare continuous audit & compliance monitoring.",
+        prompt: "SOC 2 Type II vs ISO 27001 continuous audit and monitoring obligations."
       },
       {
-        title: "ISO 13485 CAPA Warning Letters",
-        desc: "Audit common 483 inspection findings in quality systems.",
-        prompt: "FDA warning letters and 483 observations related to ISO 13485 CAPA systems."
+        title: "Zero Trust Architecture Patterns",
+        desc: "Audit implementation standards under NIST SP 800-207.",
+        prompt: "Zero Trust architecture guidelines and network access implementation patterns."
       }
     ]
   },
@@ -97,7 +97,7 @@ export const AGENTS = {
     endpoint: "/mcp/stream",
     syncEndpoint: "/mcp/run",
     supportsHITL: false,
-    activeMode: localStorage.getItem("rp360_mcp_mode") || "harry_potter",
+    activeMode: localStorage.getItem("agentsphere_mcp_mode") || "harry_potter",
     modes: {
       harry_potter: {
         id: "harry_potter",
@@ -194,29 +194,29 @@ export const AGENTS = {
     color: "#1b4f72",
     endpoint: "/get_sql_query",
     supportsHITL: false,
-    inputPlaceholder: "Ask a database question (e.g. Show all Class II medical devices approved after 2020)...",
-    defaultPrompt: "Show all medical devices registered under Class II",
+    inputPlaceholder: "Ask a database question (e.g. Show all Tier 2 enterprise systems certified after 2020)...",
+    defaultPrompt: "Show all enterprise systems registered under Tier 2",
     params: {},
     suggestions: [
       {
-        title: "Class II Medical Devices",
-        desc: "Query all registered Class II devices in database.",
-        prompt: "Show all medical devices registered under Class II"
+        title: "Tier 2 Enterprise Systems",
+        desc: "Query all registered Tier 2 systems in database.",
+        prompt: "Show all enterprise systems registered under Tier 2"
       },
       {
-        title: "Approved Device Counts by Class",
+        title: "Certified System Counts by Tier",
         desc: "Aggregate statistics across classification tiers.",
-        prompt: "Count the number of approved medical devices by risk class"
+        prompt: "Count the number of certified systems by risk tier"
       },
       {
-        title: "Top Approved Devices Post-2020",
-        desc: "Filter recent high-risk device clearances.",
-        prompt: "List top 5 devices approved after 2020 with high risk classification"
+        title: "Top Systems Certified Post-2020",
+        desc: "Filter recent high-risk system clearances.",
+        prompt: "List top 5 systems certified after 2020 with high risk classification"
       },
       {
-        title: "Predicate Reference Statistics",
-        desc: "Analyze predicate references and recall correlations.",
-        prompt: "Show device recall statistics and predicate references"
+        title: "Vendor Benchmark Statistics",
+        desc: "Analyze system benchmarks and vendor correlations.",
+        prompt: "Show system audit statistics and vendor reference benchmarks"
       }
     ]
   },
@@ -231,28 +231,28 @@ export const AGENTS = {
     endpoint: "/generic_chat",
     supportsHITL: false,
     inputPlaceholder: "Ask a question or continue the conversation (PostgreSQL memory active)...",
-    defaultPrompt: "My company is developing a pulse oximeter for clinical use. What class is this?",
+    defaultPrompt: "My organization is deploying a distributed data ingestion pipeline. What architecture tier is this?",
     params: {},
     suggestions: [
       {
-        title: "Pulse Oximeter Classification",
+        title: "System Tier Classification",
         desc: "Determine risk tier & general requirements.",
-        prompt: "My company is developing a pulse oximeter for clinical use. What class is this?"
+        prompt: "My organization is deploying a distributed data ingestion pipeline. What architecture tier is this?"
       },
       {
         title: "Test Multi-Turn Memory",
         desc: "Recall context from previous dialogue turns.",
-        prompt: "What device did I mention previously in our conversation?"
+        prompt: "What system did I mention previously in our conversation?"
       },
       {
-        title: "510(k) Substantial Equivalence",
+        title: "Security Baseline Equivalence",
         desc: "Understand technological characteristics comparison.",
-        prompt: "Explain 510(k) Substantial Equivalence criteria."
+        prompt: "Explain technical characteristics and security baseline verification."
       },
       {
-        title: "ISO 14971 Risk Management",
+        title: "ISO 27001 Risk Management",
         desc: "Review essential risk management lifecycle steps.",
-        prompt: "What are the essential requirements of ISO 14971 risk management?"
+        prompt: "What are the essential requirements of ISO 27001 risk assessment?"
       }
     ]
   }

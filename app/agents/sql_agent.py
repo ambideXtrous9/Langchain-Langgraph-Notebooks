@@ -23,44 +23,44 @@ def create_demo_sqlite_db() -> SQLDatabase:
     )
     metadata = MetaData()
 
-    # Create sample Medical Devices table
-    devices = Table(
-        "medical_devices",
+    # Create sample Enterprise Systems table
+    systems = Table(
+        "enterprise_systems",
         metadata,
         Column("id", Integer, primary_key=True),
-        Column("device_name", String(100)),
-        Column("device_class", String(20)),
-        Column("fda_approval_year", Integer),
+        Column("system_name", String(100)),
+        Column("system_tier", String(20)),
+        Column("certification_year", Integer),
         Column("risk_level", String(20)),
-        Column("manufacturer", String(100)),
+        Column("vendor", String(100)),
     )
 
     metadata.create_all(engine)
 
     with engine.connect() as conn:
         conn.execute(
-            devices.insert(),
+            systems.insert(),
             [
                 {
-                    "device_name": "CardioPacemaker Pro",
-                    "device_class": "Class III",
-                    "fda_approval_year": 2021,
+                    "system_name": "CloudIdentity Pro",
+                    "system_tier": "Tier 3",
+                    "certification_year": 2021,
                     "risk_level": "High",
-                    "manufacturer": "MedTech Corp",
+                    "vendor": "SecureTech Corp",
                 },
                 {
-                    "device_name": "GlucoTrack Sensor",
-                    "device_class": "Class II",
-                    "fda_approval_year": 2022,
+                    "system_name": "DataPipeline Sensor",
+                    "system_tier": "Tier 2",
+                    "certification_year": 2022,
                     "risk_level": "Moderate",
-                    "manufacturer": "BioSense Inc",
+                    "vendor": "InfraSense Inc",
                 },
                 {
-                    "device_name": "Digital Stethoscope AI",
-                    "device_class": "Class II",
-                    "fda_approval_year": 2023,
+                    "system_name": "Telemetry Gateway AI",
+                    "system_tier": "Tier 2",
+                    "certification_year": 2023,
                     "risk_level": "Low",
-                    "manufacturer": "HealthSound Ltd",
+                    "vendor": "CloudSound Ltd",
                 },
             ],
         )

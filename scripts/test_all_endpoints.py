@@ -5,7 +5,7 @@ Tests 6 Categories across 35+ Test Cases against the running Docker stack:
 2. Authentication & Authorization (Argon2id, OAuth2, JWT Blacklist, Resets)
 3. Model Context Protocol (MCP) Multi-Agent Travel Pipeline
 4. Autonomous Parallel Research Pipeline
-5. Stateful Regulatory Decision-Tree & Chat Memory
+5. Stateful Policy Decision-Tree & Chat Memory
 6. Text-to-SQL Agent
 """
 
@@ -101,7 +101,7 @@ def run_all_tests():
     print("\n--- 2. AUTHENTICATION & AUTHORIZATION (auth_db) ---")
 
     test_uid = uuid.uuid4().hex[:6]
-    user_email = f"doctor_{test_uid}@fda.gov"
+    user_email = f"architect_{test_uid}@enterprise.org"
     user_pwd = "StrongPassword123!"
     user_token = ""
     auth_headers = {}
@@ -124,7 +124,7 @@ def run_all_tests():
 
     # TC 2.3: Weak Password Validation (Edge Case)
     try:
-        r = client.post("/auth/signup", json={"email": f"weak_{test_uid}@fda.gov", "full_name": "Weak", "password": "123"})
+        r = client.post("/auth/signup", json={"email": f"weak_{test_uid}@enterprise.org", "full_name": "Weak", "password": "123"})
         passed = r.status_code == 422
         log_test("Auth", "TC 2.3", "POST /auth/signup short password rejection (422)", passed, f"Status: {r.status_code}")
     except Exception as e:
@@ -182,7 +182,7 @@ def run_all_tests():
         log_test("Auth", "TC 2.8", "Password Reset Flow", False, str(e))
 
     # TC 2.9: Logout & Token Revocation
-    logout_user_email = f"logout_{test_uid}@fda.gov"
+    logout_user_email = f"logout_{test_uid}@enterprise.org"
     client.post("/auth/signup", json={"email": logout_user_email, "full_name": "Logout Tester", "password": user_pwd})
     logout_login_res = client.post("/auth/login", data={"username": logout_user_email, "password": user_pwd})
     logout_token = logout_login_res.json().get("access_token", "")
@@ -316,7 +316,7 @@ def run_all_tests():
     try:
         r = client.post(
             "/research/run",
-            json={"topic": "Recent FDA safety communications on surgical robotic staplers"},
+            json={"topic": "Recent security advisories and resilience trends in cloud container orchestration"},
             headers=auth_headers,
             timeout=90.0
         )
@@ -332,7 +332,7 @@ def run_all_tests():
         with client.stream(
             "POST",
             "/research/stream",
-            json={"topic": "AI diagnostic software 510k clearance trends"},
+            json={"topic": "Autonomous AI governance standards and validation requirements"},
             headers=auth_headers,
             timeout=90.0
         ) as response:
@@ -375,9 +375,9 @@ def run_all_tests():
         log_test("Research", "TC 4.5", "POST /research/run PII", False, str(e))
 
     # --------------------------------------------------------------------------
-    # CATEGORY 5: Stateful Regulatory Decision-Tree & Chat Memory
+    # CATEGORY 5: Stateful Policy Decision-Tree & Chat Memory
     # --------------------------------------------------------------------------
-    print("\n--- 5. REGULATORY DECISION-TREE & STATEFUL CHAT (agent_db) ---")
+    print("\n--- 5. POLICY DECISION-TREE & STATEFUL CHAT (agent_db) ---")
 
     session_id = f"sess_{test_uid}"
     thread_id = ""
@@ -386,7 +386,7 @@ def run_all_tests():
     try:
         r = client.post(
             "/generic_chat",
-            json={"user_input": "My company is developing a pulse oximeter for clinical use.", "session_id": session_id},
+            json={"user_input": "My organization is deploying a distributed data ingestion pipeline.", "session_id": session_id},
             headers=auth_headers,
             timeout=45.0
         )
@@ -400,13 +400,13 @@ def run_all_tests():
     try:
         r = client.post(
             "/generic_chat",
-            json={"user_input": "What device did I mention previously?", "session_id": session_id},
+            json={"user_input": "What system did I mention previously?", "session_id": session_id},
             headers=auth_headers,
             timeout=45.0
         )
         data = r.json()
-        passed = r.status_code == 200 and ("oximeter" in data.get("response", "").lower() or "pulse" in data.get("response", "").lower())
-        log_test("Stateful Chat", "TC 5.2", "POST /generic_chat context recall from postgres history", passed, f"Memory recalled: 'oximeter' in response")
+        passed = r.status_code == 200 and ("pipeline" in data.get("response", "").lower() or "ingestion" in data.get("response", "").lower() or "distributed" in data.get("response", "").lower())
+        log_test("Stateful Chat", "TC 5.2", "POST /generic_chat context recall from postgres history", passed, f"Memory recalled: 'pipeline' in response")
     except Exception as e:
         log_test("Stateful Chat", "TC 5.2", "POST /generic_chat turn 2", False, str(e))
 
@@ -424,8 +424,8 @@ def run_all_tests():
             "POST",
             "/interact",
             json={
-                "user_choices": {"device_class": "Class II"},
-                "user_input": "What are the 510k submission criteria for software as medical device (SaMD)?",
+                "user_choices": {"system_tier": "Tier 2"},
+                "user_input": "What are the baseline security criteria for autonomous cloud engines?",
                 "useDeviceData": False
             },
             headers=auth_headers,
@@ -519,7 +519,7 @@ def run_all_tests():
 
     # TC 6.1: Valid SQL Query Execution
     try:
-        r = client.post("/get_sql_query", json={"query": "Show medical devices registered under Class II"}, headers=auth_headers, timeout=45.0)
+        r = client.post("/get_sql_query", json={"query": "Show enterprise systems registered under Tier 2"}, headers=auth_headers, timeout=45.0)
         data = r.json()
         sql_q = data.get("sql_query") or "Generated"
         log_test("SQL Agent", "TC 6.1", "POST /get_sql_query natural language query", passed, f"SQL Query: {sql_q[:40]}")
@@ -542,9 +542,9 @@ def run_all_tests():
     except Exception as e:
         log_test("SQL Agent", "TC 6.3", "POST /get_sql_query empty", False, str(e))
 
-    # TC 6.4: Device Count SQL Query
+    # TC 6.4: System Count SQL Query
     try:
-        r = client.post("/get_sql_query", json={"query": "Count the number of approved medical devices"}, headers=auth_headers, timeout=45.0)
+        r = client.post("/get_sql_query", json={"query": "Count the number of certified enterprise systems"}, headers=auth_headers, timeout=45.0)
         passed = r.status_code == 200
         log_test("SQL Agent", "TC 6.4", "POST /get_sql_query aggregation count query", passed, f"Status: {r.status_code}")
     except Exception as e:
@@ -552,7 +552,7 @@ def run_all_tests():
 
     # TC 6.5: Complex Filtering SQL Query
     try:
-        r = client.post("/get_sql_query", json={"query": "List top 5 devices approved after 2020 with high risk class"}, headers=auth_headers, timeout=45.0)
+        r = client.post("/get_sql_query", json={"query": "List top 5 systems certified after 2020 with high risk class"}, headers=auth_headers, timeout=45.0)
         passed = r.status_code == 200
         log_test("SQL Agent", "TC 6.5", "POST /get_sql_query filtered conditional query", passed, f"Status: {r.status_code}")
     except Exception as e:
@@ -561,7 +561,7 @@ def run_all_tests():
     # TC 6.6: SQL Agent Caching & Repeated Query
     try:
         t0 = time.time()
-        r1 = client.post("/get_sql_query", json={"query": "Count medical devices"}, headers=auth_headers, timeout=45.0)
+        r1 = client.post("/get_sql_query", json={"query": "Count enterprise systems"}, headers=auth_headers, timeout=45.0)
         t1 = time.time() - t0
         passed = r1.status_code == 200
         log_test("SQL Agent", "TC 6.6", "POST /get_sql_query cached execution performance", passed, f"Latency: {t1:.2f}s")
@@ -592,8 +592,8 @@ def run_all_tests():
             with ws_sync.connect(ws_url) as ws:
                 ws.send(json.dumps({
                     "action": "start",
-                    "user_input": "What is the FDA classification for robotic catheters?",
-                    "user_choices": {"device_class": "Class II"},
+                    "user_input": "What is the policy classification for enterprise telemetry gateways?",
+                    "user_choices": {"system_tier": "Tier 2"},
                     "useDeviceData": False
                 }))
                 msg = ws.recv(timeout=15.0)

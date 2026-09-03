@@ -50,9 +50,9 @@ def test_research_graph_compilation_and_topology():
 def test_format_search_results():
     """Tests search result markdown formatting."""
     results = [
-        {"title": "Test FDA Guideline", "body": "Guideline summary details", "href": "https://fda.gov/test"}
+        {"title": "Test ISO Standard", "body": "Guideline summary details", "href": "https://standards.org/test"}
     ]
     formatted = format_search_results(results, "Test Query")
     assert "Test Query" in formatted
-    assert "Test FDA Guideline" in formatted
-    assert "https://fda.gov/test" in formatted
+    assert "Test ISO Standard" in formatted
+    assert "https://standards.org/test" in formatted

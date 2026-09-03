@@ -1,6 +1,6 @@
 /* ==========================================================================
-   RP360 CHAT PLATFORM & MULTI-AGENT UI (ChatGPT-style with RP360 Theme)
-   Strictly aligned with https://rp360.io/ visual identity and typography
+   AGENTSPHERE CHAT PLATFORM & MULTI-AGENT UI (ChatGPT-style with Modern Theme)
+   Clean Modern Agentic Interface Design System
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
@@ -892,7 +892,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   6. Prose Typography Consistency (RP360 Styling)
+   6. Prose Typography Consistency (AgentSphere Styling)
    -------------------------------------------------------------------------- */
 .prose {
   font-family: var(--body);

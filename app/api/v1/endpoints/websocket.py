@@ -124,8 +124,8 @@ async def websocket_interact_endpoint(websocket: WebSocket):
             seen_ws_end_nodes = set()
             seen_ws_tools = set()
 
-            device_label = device_data or (user_choices.get("device_class") if isinstance(user_choices, dict) else "") or "medical device"
-            prompt_summary = user_input or "regulatory compliance analysis"
+            device_label = device_data or (user_choices.get("system_tier") if isinstance(user_choices, dict) else "") or (user_choices.get("device_class") if isinstance(user_choices, dict) else "") or "enterprise system"
+            prompt_summary = user_input or "policy compliance analysis"
 
             events = graph.astream_events(input=graph_input, config=thread_config, version="v2")
 
@@ -147,17 +147,17 @@ async def websocket_interact_endpoint(websocket: WebSocket):
                 if event_type == "on_chain_start" and node_name in graph_nodes and node_name not in seen_ws_start_nodes:
                     seen_ws_start_nodes.add(node_name)
                     if node_name == "user_initpath":
-                        hint = f"Routing Engine: Parsing user intent, device parameters, and regulatory path for '{prompt_summary[:40]}...'"
+                        hint = f"Routing Engine: Parsing user intent, system parameters, and policy path for '{prompt_summary[:40]}...'"
                     elif node_name == "classify_node":
-                        hint = f"Structured Classifier: Validating regulatory schema and routing compliance for '{prompt_summary[:40]}...'"
+                        hint = f"Structured Classifier: Validating policy schema and routing compliance for '{prompt_summary[:40]}...'"
                     elif node_name == "device_summary":
-                        hint = f"Device Profiler: Synthesizing specifications and classification tier for '{device_label}'..."
+                        hint = f"System Profiler: Synthesizing specifications and classification tier for '{device_label}'..."
                     elif node_name == "knowledge_base":
                         hint = f"Knowledge Base: Performing BM25 + dense retrieval for '{prompt_summary[:40]}...'"
                     elif node_name == "reason_llm":
-                        hint = f"Regulatory Expert: Synthesizing compliance pathway and 510(k)/PMA reasoning for '{prompt_summary[:40]}...'"
+                        hint = f"Policy Expert: Synthesizing compliance pathway and standard specification reasoning for '{prompt_summary[:40]}...'"
                     elif node_name == "process_feedback":
-                        hint = "Human-in-the-Loop: Awaiting user feedback/authorization on regulatory guidance..."
+                        hint = "Human-in-the-Loop: Awaiting user feedback/authorization on policy guidance..."
                     else:
                         hint = f"Executing Node: {node_name}"
 
@@ -171,33 +171,33 @@ async def websocket_interact_endpoint(websocket: WebSocket):
                     if tool_id not in seen_ws_tools:
                         seen_ws_tools.add(tool_id)
                         query_param = tool_input.get("query") if isinstance(tool_input, dict) else str(tool_input)
-                        t_hint = f"Tool [{tool_name}]: Querying regulatory predicate data for '{str(query_param)[:40]}...'..."
+                        t_hint = f"Tool [{tool_name}]: Querying benchmark data for '{str(query_param)[:40]}...'..."
                         await websocket.send_json({"type": "tool_start", "tool": tool_name, "content": t_hint})
 
                 elif event_type == "on_tool_end":
                     tool_name = event.get("name", "tool")
-                    t_hint = f"Tool [{tool_name}]: Regulatory intelligence retrieved for '{device_label}'"
+                    t_hint = f"Tool [{tool_name}]: Benchmark intelligence retrieved for '{device_label}'"
                     await websocket.send_json({"type": "tool_end", "tool": tool_name, "content": t_hint})
 
                 # Node Completion Hints
                 elif event_type == "on_chain_end" and node_name in graph_nodes and node_name not in seen_ws_end_nodes:
                     seen_ws_end_nodes.add(node_name)
                     if node_name == "classify_node":
-                        hint = f"Structured Classifier: Confirmed regulatory classification for '{prompt_summary[:35]}...'"
+                        hint = f"Structured Classifier: Confirmed policy classification for '{prompt_summary[:35]}...'"
                     elif node_name == "device_summary":
-                        hint = f"Device Profiler: Generated technical profile for '{device_label}'"
+                        hint = f"System Profiler: Generated technical profile for '{device_label}'"
                     elif node_name == "knowledge_base":
-                        hint = f"Knowledge Base: Matched relevant FDA regulations and guidance documents"
+                        hint = f"Knowledge Base: Matched relevant policy standards and guidance documents"
                     elif node_name == "reason_llm":
-                        hint = f"Regulatory Expert: Finalized compliance recommendations for '{device_label}'"
+                        hint = f"Policy Expert: Finalized compliance recommendations for '{device_label}'"
                     else:
                         hint = f"Completed {node_name}"
 
                     await websocket.send_json({"type": "hint", "stage": node_name, "status": "completed", "content": hint})
 
-                # Token streaming ONLY from final RegulatoryExpert node
+                # Token streaming from PolicyExpert or reason_llm node
                 elif event_type == "on_chat_model_stream":
-                    if any(tag in ["RegulatoryExpert", "reason_llm"] for tag in event_tags):
+                    if any(tag in ["PolicyExpert", "reason_llm"] for tag in event_tags):
                         chunk = event.get("data", {}).get("chunk")
                         chunk_content = getattr(chunk, "content", "") if chunk else ""
                         if chunk_content:

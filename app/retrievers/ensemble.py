@@ -45,16 +45,16 @@ def create_in_memory_retriever(
     if documents is None:
         documents = [
             Document(
-                page_content="FDA 21 CFR Part 820 Quality System Regulation requires medical device manufacturers to establish quality systems.",
-                metadata={"source": "cfr", "section": "820"},
+                page_content="ISO/IEC 27001 Information Security Management Systems requires organizations to establish security controls.",
+                metadata={"source": "iso", "section": "27001"},
             ),
             Document(
-                page_content="ISO 13485:2016 Medical devices - Quality management systems - Requirements for regulatory purposes.",
-                metadata={"source": "sng", "standard": "ISO 13485"},
+                page_content="NIST SP 800-53 Security and Privacy Controls for Information Systems and Organizations.",
+                metadata={"source": "nist", "standard": "800-53"},
             ),
             Document(
-                page_content="FDA Guidance: Premarket Notification (510k) Submissions for Medical Devices.",
-                metadata={"source": "gdnc", "type": "guidance"},
+                page_content="Enterprise Architecture Guidance: Cloud System Verification and Security Baseline Auditing.",
+                metadata={"source": "guidance", "type": "architecture"},
             ),
         ]
     return InMemoryDocRetriever(docs=documents, k=k)

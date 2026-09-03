@@ -33,5 +33,5 @@ def decide_start_node(state: AgentState) -> Literal["end", "feedbackloop", "devi
         # Only brand-new uncontextualized generic greetings route directly to feedback loop
         return "feedbackloop"
     else:
-        # All ongoing thread conversations & FDA queries route to knowledge base and reason LLM
+        # All ongoing thread conversations & policy/standards queries route to knowledge base and reason LLM
         return "knowledge"

@@ -1,10 +1,10 @@
-# RP360 Multi-Agent Chat Interface (Frontend)
+# AgentSphere Multi-Agent Chat Interface (Frontend)
 
-Standalone, decoupled ChatGPT-style multi-agent conversational client built on the **RP360** design system.
+Standalone, decoupled ChatGPT-style multi-agent conversational client built on the **AgentSphere** design system.
 
 ---
 
-## 🎨 Theme & Design System (RP360)
+## 🎨 Theme & Design System (AgentSphere)
 
 - **Design Tokens**: Bone (`#f4f5f3`), Off-White Paper (`#ffffff`), Deep Ink (`#0e1216`), Muted Slate (`#5a646e`), Precision Cobalt (`#2b44c7`), Alert Crimson (`#b3341f`), and Clear Emerald (`#1f6f52`).
 - **Typography**: Google Fonts *Archivo* (Display), *IBM Plex Sans* (Body), and *IBM Plex Mono* (Code / Metadata).
@@ -13,13 +13,13 @@ Standalone, decoupled ChatGPT-style multi-agent conversational client built on t
   - Symmetrically centered widescreen conversational canvas (**`1140px`** max width, matching 20px padding on scroll canvas and bottom dock).
   - Floating bottom input dock with parameter quick-chips and auto-resizing prompt textarea.
   - Custom responsive Markdown tables (`.prose table`) with zebra striping, sticky headers, and non-breaking entity columns.
-  - Cache-busting static asset versioning (`?v=3.3`).
+  - Cache-busting static asset versioning (`?v=3.4`).
 
 ---
 
 ## 🤖 Supported Backend Agents
 
-1. **FDA Regulatory Navigator Agent** (`/interact`, `/ws/interact`, `/thread/{id}/state`): Stateful LangGraph decision tree with Human-in-the-Loop review interrupts and 510(k)/PMA pathway reasoning.
+1. **Policy & Standards Navigator Agent** (`/interact`, `/ws/interact`, `/thread/{id}/state`): Stateful LangGraph decision tree with Human-in-the-Loop review interrupts and compliance pathway reasoning.
 2. **Autonomous Deep Research Agent** (`/research/stream`, `/research/run`): 9-node parallel multi-critic research pipeline with live DuckDuckGo web searches and `defer=True` publisher join.
 3. **MCP Multi-Agent Intelligence** (`/mcp/stream`, `/mcp/run`, `/mcp/mermaid`, `/mcp/tools`): Subprocess stdio MCP manager with a native top-navbar **Domain Selector Dropdown**:
    - **⚡ Harry Potter Multi-Hop Universe QA**: 3-hop iterative retrieval using the full 9-tool suite of `@pinecone-database/mcp` across `hpvdb-openai`, reranked via `pinecone-rerank-v0` and synthesized by `hpLoreScholar`.

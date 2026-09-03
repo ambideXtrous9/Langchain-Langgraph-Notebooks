@@ -66,7 +66,7 @@ class SummarizationMiddleware(AgentMiddleware):
                 transcript = "\n".join([f"{msg.type.upper()}: {msg.content}" for msg in older_messages if isinstance(msg.content, str)])
                 prompt = (
                     "Summarize the following prior dialogue into a concise bulleted historical context summary, "
-                    "retaining key regulatory classifications, device details, and previous user requests:\n\n"
+                    "retaining key policy classifications, system details, and previous user requests:\n\n"
                     f"{transcript}"
                 )
                 response = await self.llm.ainvoke([HumanMessage(content=prompt)])

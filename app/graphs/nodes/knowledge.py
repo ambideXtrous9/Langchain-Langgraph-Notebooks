@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class KnowledgeBaseNode(BaseGraphNode):
-    """Retrieves relevant regulatory guidance, CFR rules, and standards to build decision tree context."""
+    """Retrieves relevant architecture guidance, compliance standards, and benchmarks to build decision tree context."""
 
     name: str = "knowledge_base"
 
@@ -27,7 +27,7 @@ class KnowledgeBaseNode(BaseGraphNode):
         if state.get("feedback"):
             query_terms.append(state["feedback"])
 
-        search_query = " ".join(query_terms) if query_terms else "FDA medical device regulatory pathway"
+        search_query = " ".join(query_terms) if query_terms else "Enterprise system architecture compliance standard pathway"
 
         try:
             docs = await self.retriever.ainvoke(search_query)
@@ -35,12 +35,12 @@ class KnowledgeBaseNode(BaseGraphNode):
         except Exception as e:
             logger.warning(f"Retrieval in knowledge base failed: {e}. Using fallback reference context.")
             retrieved_text = (
-                "[CFR 820]: Quality System Regulation for Medical Devices.\n"
-                "[FDA 510k]: Premarket Notification Demonstration of Substantial Equivalence."
+                "[ISO 27001]: Information Security Management System Controls.\n"
+                "[NIST 800-53]: Security and Privacy Controls for Information Systems and Organizations."
             )
 
         existing_context = state.get("context_docs_str") or ""
-        combined_context = f"{existing_context}\n\n[Retrieved Regulatory Knowledge]:\n{retrieved_text}".strip()
+        combined_context = f"{existing_context}\n\n[Retrieved Policy & Standards Knowledge]:\n{retrieved_text}".strip()
 
         return {
             "context_docs_str": combined_context,

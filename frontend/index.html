@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RP360 // Multi-Agent Intelligence Platform</title>
-  <meta name="description" content="ChatGPT-style multi-agent intelligence platform for FDA regulatory compliance, autonomous deep research, MCP tool synthesis, and SQL analytics." />
+  <title>AgentSphere // Multi-Agent Intelligence Platform</title>
+  <meta name="description" content="ChatGPT-style multi-agent intelligence platform for enterprise policy compliance, autonomous deep research, MCP tool synthesis, and SQL analytics." />
 
-  <!-- Google Fonts: Archivo, IBM Plex Sans, IBM Plex Mono matching https://rp360.io/ -->
+  <!-- Google Fonts: Archivo, IBM Plex Sans, IBM Plex Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -37,9 +37,9 @@
     <aside class="sidebar">
       <!-- Sidebar Header -->
       <div class="sidebar-header">
-        <div class="sidebar-brand" id="brand-logo-trigger" title="RP360 Multi-Agent Platform">
-          <div class="sidebar-brand-mark">RP</div>
-          <span>RP360</span>
+        <div class="sidebar-brand" id="brand-logo-trigger" title="AgentSphere Multi-Agent Platform">
+          <div class="sidebar-brand-mark">AS</div>
+          <span>AgentSphere</span>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="sidebar-toggle-btn" title="Toggle Sidebar" style="padding: 4px;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
@@ -55,9 +55,9 @@
       <!-- Agent Switcher Section -->
       <div class="sidebar-section-title">Agents & Intelligence</div>
       <nav class="agent-nav-list">
-        <button type="button" class="agent-nav-item is-active" data-agent-id="regulatory">
+        <button type="button" class="agent-nav-item is-active" data-agent-id="policy">
           <svg class="agent-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <span>Regulatory Navigator</span>
+          <span>Policy Navigator</span>
         </button>
 
         <button type="button" class="agent-nav-item" data-agent-id="research">
@@ -123,19 +123,19 @@
               <span id="active-agent-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               </span>
-              <span id="active-agent-name">FDA Regulatory Navigator</span>
-              <span class="tag brand" id="active-agent-badge" style="padding: 1px 6px; font-size: 9.5px;">STATEFUL &middot; HITL</span>
+              <span id="active-agent-name">Policy &amp; Standards Navigator</span>
+              <span class="tag brand" id="active-agent-badge" style="padding: 1px 6px; font-size: 9.5px;">SYSTEM AUDIT &middot; HITL</span>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
             </button>
 
             <!-- Agent Dropdown Menu -->
             <div class="agent-dropdown-menu" id="agent-dropdown-menu">
-              <div class="agent-option is-selected" data-agent-option="regulatory">
+              <div class="agent-option is-selected" data-agent-option="policy">
                 <div class="agent-option-head">
-                  <span>FDA Regulatory Navigator</span>
+                  <span>Policy &amp; Standards Navigator</span>
                   <span class="tag brand">HITL</span>
                 </div>
-                <div class="agent-option-desc">510(k)/PMA pathway reasoning & human review interrupts.</div>
+                <div class="agent-option-desc">Compliance pathway reasoning &amp; human review checkpoints.</div>
               </div>
 
               <div class="agent-option" data-agent-option="research">
@@ -265,7 +265,7 @@
 
           <!-- Main Input Field & Action Buttons -->
           <div class="chat-input-main">
-            <textarea class="chat-textarea" id="chat-input-textarea" rows="1" placeholder="Ask about FDA pathways, deep research, MCP travel, or SQL analytics..."></textarea>
+            <textarea class="chat-textarea" id="chat-input-textarea" rows="1" placeholder="Ask about policy pathways, deep research, MCP tools, or SQL analytics..."></textarea>
             <button type="button" class="chat-send-btn" id="chat-send-trigger" disabled title="Send message">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
             </button>
@@ -273,7 +273,7 @@
         </div>
 
         <div class="chat-footnote">
-          RP360 Multi-Agent System &middot; Powered by LangGraph Stateful Graphs, FastAPI, and PostgreSQL
+          AgentSphere Multi-Agent System &middot; Powered by LangGraph Stateful Graphs, FastAPI, and PostgreSQL
         </div>
       </div>
 
@@ -314,28 +314,28 @@
 
       <div class="demo-form">
         <div class="field">
-          <label class="field-label" for="cfg-device-class">FDA Device Classification</label>
+          <label class="field-label" for="cfg-device-class">System &amp; Compliance Tier</label>
           <div class="field-select-wrap">
             <select class="field-select" id="cfg-device-class">
-              <option value="Class I (General Controls)">Class I &mdash; General Controls (Low Risk)</option>
-              <option value="Class II (510k Premarket Notification)" selected>Class II &mdash; 510(k) Premarket Notification (Moderate Risk)</option>
-              <option value="Class III (PMA Premarket Approval)">Class III &mdash; PMA Premarket Approval (High Risk)</option>
-              <option value="De Novo Pathway">De Novo Classification (Novel Moderate Risk)</option>
+              <option value="Tier 1 (Standard Controls)">Tier 1 &mdash; Standard Controls (Low Impact)</option>
+              <option value="Tier 2 (Advanced Verification Standards)" selected>Tier 2 &mdash; Advanced Verification (Moderate Impact)</option>
+              <option value="Tier 3 (Comprehensive Audit &amp; High Assurance)">Tier 3 &mdash; Comprehensive Audit (High Impact)</option>
+              <option value="Custom Framework">Custom Architecture Framework</option>
             </select>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
           </div>
         </div>
 
         <div class="field">
-          <label class="field-label" for="cfg-predicate">Predicate 510(k) Reference Number</label>
-          <input type="text" class="field-input" id="cfg-predicate" placeholder="e.g., K201842" />
+          <label class="field-label" for="cfg-predicate">Baseline Reference Standard</label>
+          <input type="text" class="field-input" id="cfg-predicate" placeholder="e.g., ISO-27001 or NIST-800-53" />
         </div>
 
         <div style="padding: 10px 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);">
           <label class="switch-label">
-            <input type="checkbox" class="switch-input" id="cfg-samd" checked />
+            <input type="checkbox" class="switch-input" id="cfg-autonomous" checked />
             <span class="switch-track"><span class="switch-thumb"></span></span>
-            <span style="font-size: 14px;">Software as Medical Device (SaMD / AI-ML Flag)</span>
+            <span style="font-size: 14px;">Autonomous AI / Cloud Engine Flag</span>
           </label>
         </div>
 
@@ -366,12 +366,12 @@
 
       <!-- Sign In Form -->
       <form id="form-login" class="demo-form">
-        <h3 style="font-size: 19px; margin-bottom: 4px;">Sign In to RP360</h3>
+        <h3 style="font-size: 19px; margin-bottom: 4px;">Sign In to AgentSphere</h3>
         <p style="font-size: 13.5px; color: var(--slate); margin-bottom: 14px;">Authenticate with Argon2id credentials for JWT access.</p>
 
         <div class="field">
           <label class="field-label" for="login-email">Email Address</label>
-          <input type="email" class="field-input" id="login-email" required placeholder="doctor@fda.gov" />
+          <input type="email" class="field-input" id="login-email" required placeholder="architect@enterprise.org" />
         </div>
 
         <div class="field">
@@ -386,17 +386,17 @@
 
       <!-- Sign Up Form -->
       <form id="form-signup" class="demo-form" style="display: none;">
-        <h3 style="font-size: 19px; margin-bottom: 4px;">Create RP360 Account</h3>
+        <h3 style="font-size: 19px; margin-bottom: 4px;">Create AgentSphere Account</h3>
         <p style="font-size: 13.5px; color: var(--slate); margin-bottom: 14px;">Stores user profile with Argon2id password hash in <code>auth_db</code>.</p>
 
         <div class="field">
           <label class="field-label" for="signup-name">Full Name</label>
-          <input type="text" class="field-input" id="signup-name" required placeholder="Dr. Sarah Connor" />
+          <input type="text" class="field-input" id="signup-name" required placeholder="Sarah Connor" />
         </div>
 
         <div class="field">
           <label class="field-label" for="signup-email">Email Address</label>
-          <input type="email" class="field-input" id="signup-email" required placeholder="s.connor@medicalcenter.org" />
+          <input type="email" class="field-input" id="signup-email" required placeholder="s.connor@enterprise.org" />
         </div>
 
         <div class="field">
@@ -416,7 +416,7 @@
 
         <div class="field">
           <label class="field-label" for="forgot-email">Registered Email</label>
-          <input type="email" class="field-input" id="forgot-email" required placeholder="user@hospital.org" />
+          <input type="email" class="field-input" id="forgot-email" required placeholder="user@enterprise.org" />
         </div>
 
         <button type="submit" class="btn btn-primary" style="margin-top: 8px;">

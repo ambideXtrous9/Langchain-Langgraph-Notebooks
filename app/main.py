@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
     await mcp_manager.initialize()
     app.state.mcp_manager = mcp_manager
 
-    # 5. Build & Compile Main Regulatory Decision Graph
+    # 5. Build & Compile Main Policy Decision Graph
     builder = GraphBuilder(checkpointer=app.state.checkpointer)
     builder.build()
     app.state.graph = builder.compile()

@@ -82,7 +82,7 @@ def test_websocket_authenticated_connection(client, auth_headers):
     """Tests successful authenticated WebSocket handshake and thread initiation."""
     token = auth_headers["Authorization"].split(" ")[1]
     with client.websocket_connect(f"/ws/interact?token={token}") as ws:
-        ws.send_json({"action": "start", "user_input": "FDA test inquiry"})
+        ws.send_json({"action": "start", "user_input": "Policy test inquiry"})
         first_msg = ws.receive_json()
         assert first_msg.get("type") == "thread_id"
         assert "thread_id" in first_msg

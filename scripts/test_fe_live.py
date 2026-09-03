@@ -42,7 +42,7 @@ def run_fe_tests():
     # 1. Homepage
     try:
         r = fe_client.get("/")
-        passed = r.status_code == 200 and "RP360 // Multi-Agent Intelligence Platform" in r.text
+        passed = r.status_code == 200 and "AgentSphere // Multi-Agent Intelligence Platform" in r.text
         log("FE 1.1", "GET / homepage HTML delivery", passed, f"Status: {r.status_code}, Length: {len(r.text)} bytes")
     except Exception as e:
         log("FE 1.1", "GET / homepage HTML delivery", False, str(e))
@@ -118,7 +118,7 @@ def run_fe_tests():
     }
 
     test_uid = uuid.uuid4().hex[:6]
-    user_email = f"fe_doctor_{test_uid}@fda.gov"
+    user_email = f"fe_architect_{test_uid}@enterprise.org"
     user_pwd = "FrontEndPass123!"
 
     # 4.1 Signup
@@ -149,25 +149,25 @@ def run_fe_tests():
     except Exception as e:
         log("FE 2.3", "Frontend Profile Lookup", False, str(e))
 
-    # 4.4 Regulatory Decision Graph SSE with Normalized Device Data
+    # 4.4 Policy Decision Graph SSE with Normalized System Data
     try:
         with api_client.stream(
             "POST",
             "/interact",
             json={
-                "user_choices": {"device_class": "Class II"},
-                "user_input": "What are predicate requirements for our ablation catheter?",
+                "user_choices": {"system_tier": "Tier 2"},
+                "user_input": "What are benchmark requirements for our telemetry pipeline?",
                 "useDeviceData": True,
-                "user_provided_device_data": "Model Ablator-X: Radiofrequency cardiac ablation catheter with temperature sensors",
+                "user_provided_device_data": "Model Pipeline-X: Distributed cloud telemetry pipeline with Kafka sensors",
             },
             headers=auth_fe_headers,
             timeout=45.0,
         ) as response:
             events = [line for line in response.iter_lines() if line.startswith("data: ")]
             passed = response.status_code == 200 and len(events) >= 3
-            log("FE 3.1", "Frontend Regulatory Navigator SSE stream with device specs", passed, f"Received {len(events)} SSE frames")
+            log("FE 3.1", "Frontend Policy Navigator SSE stream with system specs", passed, f"Received {len(events)} SSE frames")
     except Exception as e:
-        log("FE 3.1", "Frontend Regulatory Navigator SSE stream", False, str(e))
+        log("FE 3.1", "Frontend Policy Navigator SSE stream", False, str(e))
 
     # 4.5 WebSocket Live Bi-directional Connection from Frontend Origin
     try:
@@ -176,7 +176,7 @@ def run_fe_tests():
             ws.send(json.dumps({
                 "action": "start",
                 "user_input": "Live test from FE WebSocket Client",
-                "user_choices": {"device_class": "Class II"},
+                "user_choices": {"system_tier": "Tier 2"},
                 "useDeviceData": False,
             }))
             resp = ws.recv(timeout=10.0)
@@ -188,7 +188,7 @@ def run_fe_tests():
 
     # 4.6 Text-to-SQL Agent Query from FE
     try:
-        r = api_client.post("/get_sql_query", json={"query": "Count registered medical devices"}, headers=auth_fe_headers, timeout=30.0)
+        r = api_client.post("/get_sql_query", json={"query": "Count registered enterprise systems"}, headers=auth_fe_headers, timeout=30.0)
         data = r.json()
         passed = r.status_code == 200 and ("final_answer" in data or "response" in data)
         log("FE 3.3", "Frontend Text-to-SQL Analyst execution (POST /get_sql_query)", passed, f"Answer: {data.get('final_answer', '')[:50]}...")

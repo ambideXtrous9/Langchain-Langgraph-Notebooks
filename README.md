@@ -78,7 +78,7 @@ The system is decoupled into **Public Authentication** and **Protected Agent Ser
 
 ### 2. Workflow Graphs
 
-#### A. Regulatory Decision-Tree Graph (Stateful Human-in-the-Loop)
+#### A. Policy Decision-Tree Graph (Stateful Human-in-the-Loop)
 ```mermaid
 flowchart TD
     Start([User Request]) --> UserInitPath[1. user_initpath\nExtract User Decision & Path]
@@ -86,11 +86,11 @@ flowchart TD
     
     ClassifyNode -- "exit" --> EndNode([END])
     ClassifyNode -- "generic" --> FeedbackLoop[6. process_feedback\nHuman-in-the-Loop Interrupt]
-    ClassifyNode -- "fda / useDeviceData=True" --> DeviceSummary[3. device_summary\nExtract & Summarize Device Specs]
-    ClassifyNode -- "fda / useDeviceData=False" --> KnowledgeBase[4. knowledge_base\nHybrid BM25 + Dense Retrieval]
+    ClassifyNode -- "policy / useDeviceData=True" --> DeviceSummary[3. device_summary\nExtract & Summarize System Specs]
+    ClassifyNode -- "policy / useDeviceData=False" --> KnowledgeBase[4. knowledge_base\nHybrid BM25 + Dense Retrieval]
     
     DeviceSummary --> KnowledgeBase
-    KnowledgeBase --> ReasonLLM[5. reason_llm\nDomain Regulatory Reasoning & SSE Tag]
+    KnowledgeBase --> ReasonLLM[5. reason_llm\nDomain Policy Reasoning & SSE Tag]
     ReasonLLM --> FeedbackLoop
     FeedbackLoop --> ClassifyNode
 ```
@@ -202,7 +202,7 @@ flowchart TD
 - Dedicated `/delete_thread` endpoint for checkpoint eviction and GDPR compliance.
 
 ### 3. Server-Sent Events (SSE) & WebSocket Streaming
-- **SSE Endpoint (`/interact`)**: Streams the generated `thread_id` first, then yields real-time token chunks using `graph.astream_events(..., version="v2")` filtered on `on_chat_model_stream` and `tags=["RegulatoryExpert"]`.
+- **SSE Endpoint (`/interact`)**: Streams the generated `thread_id` first, then yields real-time token chunks using `graph.astream_events(..., version="v2")` filtered on `on_chat_model_stream` and `tags=["PolicyExpert"]`.
 - **SSE MCP Endpoint (`/mcp/stream`)**: Yields dynamic agent execution hints (`hpSearchAgent`, `hpLoreScholar`, `airbnbAgent`, `weatherAgent`, `tourAgent`) and streams raw token chunks filtered by active sub-agent tag (`HPLoreScholar` or `TourGuideExpert`).
 - **WebSocket Endpoint (`/ws/interact`)**: Full-duplex bidirectional streaming supporting initial conversations and instant interrupt resume commands.
 
@@ -329,24 +329,24 @@ The Harry Potter QA engine implements an **Autonomous ReAct Reasoning Architectu
 Modular, extensible middleware system implementing lifecycle interception (`run_before_agent`, `run_before_model`, `run_after_model`, `run_before_tools`, `run_after_tools`, `run_after_agent`):
 - **`PIIMiddleware`**: Detects and sanitizes emails, phone numbers, SSNs, credit cards, medical record IDs (MRN/PHI), and IPv4 addresses via `mask`, `redact`, or `hash` strategies.
 - **`RateLimitMiddleware`**: Sliding-window rate limiter per user/session, consecutive error count tracking, circuit breaker protection, and reasoning confidence auditing.
-- **`HumanInTheLoopMiddleware`**: Intercepts sensitive tool calls (e.g. `execute_sql_mutation`, `submit_fda_filing`) and pauses execution until human authorization is granted.
+- **`HumanInTheLoopMiddleware`**: Intercepts sensitive tool calls (e.g. `execute_sql_mutation`, `submit_compliance_audit`) and pauses execution until human authorization is granted.
 - **`SummarizationMiddleware`**: Token- and message-count-aware chat history compressor (`trigger=[("tokens", 1200), ("messages", 8)]`), summarizing older dialogue while preserving recent context.
 
 ### 10. Centralized Streaming Engine (`app/core/streaming.py`)
 - **DRY SSE Event Generation**: Unified `stream_graph_events` async generator eliminates repetitive SSE serialization across endpoints (`/interact`, `/research/stream`, `/mcp/stream`).
-- **Granular Token & Hint Filtering**: Emits metadata events (`tool_start`, `tool_end`, `stage`, `hint`) while routing filtered `on_chat_model_stream` tokens with active agent tags (`RegulatoryExpert`, `HPLoreScholar`, `TourGuideExpert`, `Publisher`).
+- **Granular Token & Hint Filtering**: Emits metadata events (`tool_start`, `tool_end`, `stage`, `hint`) while routing filtered `on_chat_model_stream` tokens with active agent tags (`PolicyExpert`, `HPLoreScholar`, `TourGuideExpert`, `Publisher`).
 - **Heartbeat & Error Encapsulation**: Guarantees keep-alive heartbeats during long reasoning cycles and gracefully emits structured `{"error": "..."}` payloads if an upstream model or tool errors.
 
 ### 11. Graph Visualizer & Artifact Engine (`app/graphs/visualizer.py`)
 - **Dynamic Mermaid & PNG Rendering**: Centralized compilation pipeline for generating Mermaid `.mmd` files and compiled `.png` image artifacts directly into `app/static/`.
 - **Domain-Specific Graph Export**: Generates and serves diagrams for all 3 stateful graphs:
-  - Regulatory Decision Graph (`graph.mmd`, `graph.png`)
+  - Policy Decision Graph (`graph.mmd`, `graph.png`)
   - Autonomous Parallel Research Graph (`research_graph.mmd`, `research_graph.png`)
   - Dual MCP Intelligence Graph (`mcp_graph_hp.mmd`, `mcp_graph_airbnb.mmd`, `mcp_graph.png`)
 
 ### 12. Modern Decoupled Frontend UX (`frontend/`)
 - **Custom MCP Mode Dropdown**: Replaced the hybrid native `<select>` with a custom dropdown (`#mcp-dropdown-trigger` & `#mcp-dropdown-menu`). Completely resolves duplicate emoji rendering (`🏨 🏨` -> `🏨`), OS-level popup collisions, and establishes mutual exclusion with the Agent menu.
-- **Context-Aware Dynamic Parameter Input**: The top navbar `[ Parameters ]` button is automatically displayed only for agents that require configurable parameters (`regulatory`) and hidden for all other agents. Pre-populates form state on click and dynamically binds values to live SSE execution payloads.
+- **Context-Aware Dynamic Parameter Input**: The top navbar `[ Parameters ]` button is automatically displayed only for agents that require configurable parameters (`policy`) and hidden for all other agents. Pre-populates form state on click and dynamically binds values to live SSE execution payloads.
 - **WebSocket Handshake Authentication**: Automatically appends `?token=${encodeURIComponent(token)}` to the connection URI, ensuring seamless compatibility with WebSocket JWT authorization.
 - **Schema Normalization**: Fully supports the standardized `user_provided_device_data` attribute while preserving backward compatibility with legacy `userProvidedDeiveceData` payloads.
 
@@ -453,7 +453,7 @@ langgraph-project/
 │       ├── auth.js             # Argon2id signup, login, profile & JWT token management
 │       ├── agents.js           # Agent metadata, capability flags (hasParams) & mode presets
 │       ├── chat.js             # Dynamic agent switcher, param visibility & streaming loop
-│       ├── decisionTree.js     # Regulatory navigator, state inspector & thread eviction
+│       ├── decisionTree.js     # Policy navigator, state inspector & thread eviction
 │       ├── research.js         # Parallel multi-critic runner & dynamic critic hints
 │       ├── mcp.js              # Stdio MCP tool inspector & dual-mode travel/lore runner
 │       ├── sqlAgent.js         # Natural language to SQL runner & interactive data table
@@ -507,7 +507,7 @@ langgraph-project/
 | `POST` | `/mcp/stream` | **SSE streaming** with live agent hints and sub-agent token chunks | `{"topic": "...", "mode": "harry_potter" \| "airbnb"}`, `Bearer <token>` |
 | `GET` | `/mcp/mermaid` | Mermaid flowchart definition of compiled sub-graph (`?mode=harry_potter` or `?mode=airbnb`) | None |
 
-### 4. Stateful Regulatory Decision-Tree (`agent_db`)
+### 4. Stateful Policy Decision-Tree (`agent_db`)
 | Method | Path | Description | Key Request Params / Auth |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Application health and database connection status | None |
@@ -584,7 +584,7 @@ uv pip install -r requirements.txt
 ### 2. Run Comprehensive Test Suites
 
 #### A. Live Backend Endpoint & Critical Edge-Case Suite (45 / 45 Passed &mdash; 100%)
-Tests all 7 endpoint categories against the live backend (Public Health, Auth/Security, MCP Travel & Lore, Parallel Research, Stateful Regulatory Graph with PostgreSQL checkpointing, Text-to-SQL Agent with caching, and WebSocket security):
+Tests all 7 endpoint categories against the live backend (Public Health, Auth/Security, MCP Travel & Lore, Parallel Research, Stateful Policy Graph with PostgreSQL checkpointing, Text-to-SQL Agent with caching, and WebSocket security):
 ```bash
 python scripts/test_all_endpoints.py
 ```
@@ -616,7 +616,7 @@ cd frontend
 python3 -m http.server 3000
 # or: npx serve -l 3000 .
 ```
-- ChatGPT-Style Web UI (RP360 Theme): [http://localhost:3000/](http://localhost:3000/)
+- ChatGPT-Style Web UI (AgentSphere Theme): [http://localhost:3000/](http://localhost:3000/)
 
 ---
 
@@ -657,10 +657,10 @@ curl -N -X POST http://localhost:8000/interact \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <your_jwt_access_token>" \
   -d '{
-    "user_choices": {"device_class": "Class II"},
-    "user_input": "What is the 510k pathway requirements for a diagnostic monitor?",
+    "user_choices": {"system_tier": "Tier 2"},
+    "user_input": "What are the baseline compliance requirements for an enterprise telemetry engine?",
     "useDeviceData": true,
-    "user_provided_device_data": "Digital ECG monitor"
+    "user_provided_device_data": "Cloud Telemetry Ingestion Engine"
   }'
 ```
 > *(Legacy payloads using `userProvidedDeiveceData` are automatically normalized for backward compatibility).*
@@ -670,7 +670,7 @@ curl -N -X POST http://localhost:8000/interact \
 curl -N -X POST http://localhost:8000/research/stream \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <your_jwt_access_token>" \
-  -d '{"topic": "Future of robotic laparoscopic surgery and FDA safety alerts"}'
+  -d '{"topic": "Future of container security architectures and cloud governance standards"}'
 ```
 
 ### 3. Test Multi-Hop MCP Lore QA SSE Stream (`/mcp/stream` with `harry_potter`)
