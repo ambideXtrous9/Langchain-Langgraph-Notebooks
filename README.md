@@ -74,105 +74,61 @@ Every incoming request flows through a strict multi-layer defense pipeline consi
 
 ---
 
-#### A. End-to-End System Gateway & Multi-DB Gateway Topology
+#### A. End-to-End System Architecture Overview
+
+The platform implements an **Enterprise Zero-Trust Dual-Database Architecture** organized into 4 intuitive, decoupled tiers:
 
 ```mermaid
 flowchart TD
-    Client["🖥️ Client Layer\n(Browser Vanilla JS fetch / EventSource / WebSocket)\nAuth Token: LocalStorage key 'access_token'"]
-
-    subgraph Gateway ["🚪 FastAPI Gateway & Reverse Proxy (Port 8000) [Uvicorn 0.52.4 + uvloop + httptools]"]
-        CORS["CORSMiddleware (fastapi.middleware.cors)\nConfig: settings.CORS_ORIGINS\nCredentials: True, Methods: *, Headers: *"]
-        ExcHandler["Global Exception Handlers (app/core/exceptions.py)\nHandles: RequestValidationError, HTTPException,\nRateLimitExceededException, 500 Fallback"]
-        Router["API v1 Router Aggregator (app/api/v1/router.py)\nPrefix mounts: /auth, /interact, /research, /mcp, /chat, /sql, /ws, /stock"]
+    subgraph Clients ["1. Client Tier"]
+        UI["🖥️ Modern Web SPA (Tailwind + Vanilla JS)"]
+        External["📱 External REST & WebSocket Clients"]
     end
 
-    Client -->|HTTP REST / SSE / WebSocket| CORS
-    CORS --> ExcHandler
-    ExcHandler --> Router
-
-    subgraph AuthSubsystem ["🔐 Public Authentication Subsystem (/auth/*) [app/api/v1/endpoints/auth.py]"]
-        SignupEp["POST /auth/signup\n• Pkg: pwdlib==0.3.1 (argon2-cffi)\n• Hasher: Argon2id (m=64MB, t=3, p=4)\n• Schema: UserSignupRequest -> UserResponse (201)"]
-        LoginEp["POST /auth/login\n• Pkg: pyjwt==2.13.0 & python-multipart\n• Ingestion: OAuth2 form data OR JSON body\n• Crypto: HMAC-SHA256 (HS256) -> TokenResponse"]
-        ForgotEp["POST /auth/forgot-password\n• Pkg: hashlib.sha256\n• Token: 15m time-limited reset JWT\n• Storage: SHA-256 hash in password_reset_tokens"]
-        ResetEp["POST /auth/reset-password\n• Verification: verify_and_consume_reset_token()\n• Mutation: is_used=TRUE & UPDATE users hash"]
-        LogoutEp["POST /auth/logout\n• Revocation: Extract 'jti' claim via pyjwt\n• Persistence: INSERT INTO token_blacklist (auth_db)"]
+    subgraph GatewayLayer ["2. API Gateway & Security Layer (FastAPI :8000)"]
+        direction TB
+        APIGateway["🚪 FastAPI Unified Router\n(/auth, /stock, /research, /interact, /mcp, /chat)"]
+        
+        subgraph SecuritySuite ["Security & Guard Pipeline"]
+            AuthGuard["🛡️ Auth & RBAC Guard\n(JWT Bearer Verification + JTI Blacklist Check)"]
+            Middleware["⚙️ Agent Middleware Suite\n(Rate Limiter, PII Sanitizer, HITL Interrupts)"]
+        end
+        APIGateway --> AuthGuard --> Middleware
     end
 
-    subgraph GuardPipeline ["🛡️ FastAPI Security Guard Pipeline [app/api/deps.py]"]
-        OAuth2Extract["1. oauth2_scheme\n• Class: fastapi.security.OAuth2PasswordBearer\n• URL: /auth/login (Swagger UI integration)\n• Extracts: 'Authorization: Bearer <token>'"]
-        JWTDecode["2. decode_token(token)\n• Pkg: pyjwt==2.13.0\n• Signature: HS256 with settings.JWT_SECRET_KEY\n• Verifies: exp > utcnow (checks ExpiredSignatureError)"]
-        JTIBlacklist["3. is_token_blacklisted(jti)\n• Driver: psycopg==3.3.4 (AsyncConnectionPool)\n• Query: SELECT 1 FROM token_blacklist WHERE token_jti = %s\n• Rejection: 401 Unauthorized ('Token has been revoked')"]
-        UserLookup["4. get_user_by_email(email)\n• Driver: psycopg==3.3.4 (dict_row factory)\n• Query: SELECT ... FROM users WHERE email = %s\n• Resolves: Database User Entity"]
-        ActiveCheck["5. get_current_active_user / get_report_user\n• Dependency: Depends(get_current_user)\n• Asserts: user.is_active == True\n• Rejection: 403 Forbidden ('User account is deactivated')"]
-        RoleCheck["6. require_role(*allowed_roles)\n• Dependency Factory: Closure returning role_checker\n• Asserts: current_user.role in allowed_roles\n• Bypass: is_superuser == True"]
+    subgraph EngineLayer ["3. Autonomous Agent & Execution Engines"]
+        direction LR
+        StockEngine["📈 Stock Analysis Swarm\n(Master Planner + 13 Specialized Lenses)"]
+        ResearchEngine["🔍 Multi-Critic Research\n(Parallel Fact/Style Critics + Live Search)"]
+        MCPEngine["🔌 MCP Integrations\n(Pinecone Vector & OpenBnB Tools)"]
+        PolicyEngine["📋 Policy & SQL Agents\n(Decision Tree & Database Toolkit)"]
+        QuantSandbox["⚡ Deep Agents Quant Sandbox\n(Subprocess/Docker 512MB RAM Ceiling)"]
     end
 
-    subgraph AuthDB ["🗄️ PostgreSQL: auth_db (Port 5432) [psycopg-pool 3.3.1 AsyncConnectionPool]"]
-        UsersTable[("users Table\nid UUID PK, email VARCHAR UNIQUE,\nfull_name, hashed_password (Argon2id),\nis_active, is_superuser, role, created_at")]
-        BlacklistTable[("token_blacklist Table\nid SERIAL PK, token_jti VARCHAR UNIQUE,\nuser_id UUID FK, expires_at TIMESTAMPTZ,\nrevoked_at TIMESTAMPTZ")]
-        ResetTokensTable[("password_reset_tokens Table\nid SERIAL PK, user_id UUID FK,\ntoken_hash VARCHAR UNIQUE (SHA-256),\nexpires_at TIMESTAMPTZ, is_used BOOLEAN")]
+    subgraph DataLayer ["4. Dual-Database Storage Tier (PostgreSQL :5432)"]
+        AuthDB[("🔐 auth_db\n• User Accounts & Roles\n• Argon2id Password Hashes\n• Revoked Token Blacklist")]
+        AgentDB[("📦 agent_db\n• LangGraph Thread Checkpoints\n• Thread State Blobs\n• Chat Message Histories")]
     end
 
-    subgraph MiddlewareLayer ["⚙️ Agent Middleware Suite [app/middleware/]"]
-        RateLimit["RateLimitMiddleware\n• Pkg: collections.deque + time.time()\n• Limiter: Sliding window (60 req / 60s per user_id)\n• Resilience: Circuit breaker (3 consecutive errors)"]
-        PIISanitize["PIIMiddleware\n• Pkg: re (regex) + Luhn Algorithm\n• Detection: SSN, Credit Card, Email, Phone, PHI\n• Sanitization: Masking / Redaction before LLM"]
-        HITLInterception["HumanInTheLoopMiddleware\n• Pkg: langgraph.types.interrupt\n• Intercept: Mutating / compliance tool calls\n• Pauses: Awaits human Command(resume=...)"]
-        Summarizer["SummarizationMiddleware\n• Pkg: tiktoken==0.14.0 BPE counter\n• Trigger: 1200 tokens / 8 messages\n• Compression: Recursive summary of older turns"]
-        StockMiddlewares["Stock Middleware Suite\n• StockThrottle, Telemetry,\nSelfCritique, ContextEditing"]
-    end
-
-    subgraph GuardedEndpoints ["⚡ Protected Agent Services (Guarded Endpoints)"]
-        PolicyEp["POST /interact & /thread/*\n• Guard: Depends(get_current_active_user)\n• Stream: FastAPI StreamingResponse (SSE text/event-stream)\n• Thread: f'user-{user.id}-{uuid4()}' isolation\n• State: AsyncPostgresSaver checkpoints"]
-        ResearchEp["POST /research/run & /stream\n• Guard: Depends(get_current_active_user)\n• Stream: FastAPI StreamingResponse (SSE)\n• Graph: Parallel Multi-Critic with defer=True\n• Search: duckduckgo-search==8.1.1 live intelligence"]
-        MCPEp["POST /mcp/run & /stream\n• Guard: Depends(get_current_active_user)\n• Stream: FastAPI StreamingResponse (SSE)\n• Protocol: Model Context Protocol (MCP stdio)\n• Subprocesses: @pinecone-database/mcp & @openbnb"]
-        ChatEp["POST /generic_chat\n• Guard: Depends(get_current_active_user)\n• Pkg: langchain-postgres==0.0.17\n• Memory: PostgresChatMessageHistory (agent_db)\n• LLM: ChatGroq (openai/gpt-oss-120b)"]
-        SQLEp["POST /get_sql_query\n• Guard: Depends(get_current_active_user)\n• Pkg: SQLDatabaseToolkit (langchain_community)\n• Safety: sql_db_query_checker + read-only execution"]
-        WSEp["WS /ws/interact\n• Protocol: FastAPI WebSocket\n• Auth: query_params['token'] pre-accept verify\n• Rejection: close(code=WS_1008_POLICY_VIOLATION)\n• Streaming: Full-duplex JSON frames"]
-        StockEp["POST /stock/analyze & /stock/report/{run_id}\nPOST /stock/sandbox/* & /stock/quant/simulate\n• Guard: Depends(get_current_active_user) / get_report_user\n• Swarm: 15-node StateGraph (DuckDB, Pinecone, YFinance, GNews)\n• Quant: Isolated Deep Agents Sandboxes (Monte Carlo & Markowitz)"]
-    end
-
-    subgraph ExecutionEngines ["🧠 Execution Engines, Toolkits & Observability"]
-        LangGraphPolicy["LangGraph Policy StateGraph\n(add_messages reducer, conditional edges, interrupts)"]
-        LangGraphResearch["LangGraph Research Pipeline\n(Planner, Approver, Synthesizer, Fact/Style Critics, Publisher)"]
-        MCPManager["MCPClientManager (langchain-mcp-adapters==0.3.1)\n(stdio pipes to Node.js MCP worker processes)"]
-        SQLToolkit["SQLDatabaseToolkit\n(Safe Schema Introspection, Dialect Checker, Read-only Query)"]
-        LangGraphStock["Institutional Stock Swarm Engine\n(Master Deep Agent Planner, 13 Lenses, 4-Tier Verification, Chart Critic)"]
-        QuantSandbox["Deep Agents Quant Sandbox\n(Subprocess/Docker isolation, 512MB limit, GBM & Markowitz)"]
-        LangfuseTrace["Langfuse Observability (langfuse==4.14.4)\nCallbackHandler attached to RunnableConfig(user_id, email, thread_id)"]
-    end
-
-    subgraph AgentDB ["🗄️ PostgreSQL: agent_db (Port 5432) [psycopg-pool 3.3.1 AsyncConnectionPool]"]
-        CheckpointsTable[("checkpoints & checkpoint_blobs Tables\n• Pkg: langgraph-checkpoint-postgres==3.1.2\n• Storage: Thread checkpoints, state writes, versions")]
-        ChatHistoryTable[("chat_history Table\n• Pkg: langchain-postgres==0.0.17\n• Storage: JSON message turns (HumanMessage, AIMessage)")]
-    end
-
-    Router -->|Public Auth Requests| AuthSubsystem
-    Router -->|Guarded Endpoint Requests| OAuth2Extract
-
-    OAuth2Extract --> JWTDecode
-    JWTDecode --> JTIBlacklist
-    JTIBlacklist --> UserLookup
-    UserLookup --> ActiveCheck
-    ActiveCheck --> RoleCheck
-
-    AuthSubsystem <-->|Parameterized psycopg SQL| AuthDB
-    JTIBlacklist <-->|SELECT 1 FROM token_blacklist| BlacklistTable
-    UserLookup <-->|SELECT * FROM users| UsersTable
-
-    RoleCheck -->|Inject current_user: UserResponse| GuardedEndpoints
-
-    GuardedEndpoints --> MiddlewareLayer
-    MiddlewareLayer --> ExecutionEngines
-    ExecutionEngines --> LangfuseTrace
-
-    PolicyEp <-->|AsyncPostgresSaver Save/Hydrate| CheckpointsTable
-    ChatEp <-->|PostgresChatMessageHistory Append/Read| ChatHistoryTable
-    SQLEp <-->|Read-Only Inspection & SELECT| AgentDB
-    ResearchEp --> LangGraphResearch
-    MCPEp --> MCPManager
-    StockEp --> LangGraphStock
-    StockEp --> QuantSandbox
+    UI & External -->|HTTP REST / SSE / WebSocket| APIGateway
+    AuthGuard <-->|Verify Credentials & Check Blacklist| AuthDB
+    Middleware --> StockEngine & ResearchEngine & MCPEngine & PolicyEngine
+    StockEngine -->|Isolated Math Execution| QuantSandbox
+    StockEngine & ResearchEngine & PolicyEngine <-->|Hydrate / Persist State| AgentDB
 ```
+
+The system operates across 4 distinct layers:
+1. **Client Tier**: Web SPA, REST, and WebSocket clients authenticate via `/auth/login` to obtain an HS256 JWT access token.
+2. **API Gateway & Security Layer (`FastAPI :8000`)**: Single entry point with CORS, exception handling, and routing. Public endpoints handle onboarding and password resets. Protected endpoints pass through the OAuth2 Bearer security guard (`app/api/deps.py`) to verify signatures, check expiration, assert non-revocation against `auth_db.token_blacklist`, and enforce role permissions before triggering rate-limiting and PII sanitization middlewares.
+3. **Autonomous Agent Engines**: Guarded endpoints route to specialized LangGraph execution graphs:
+   - **Stock Analysis Swarm**: 15-node StateGraph led by the Master Deep Agent Planner across 13 specialized analytical lenses.
+   - **Multi-Critic Research**: Parallel research synthesis pipeline with live DuckDuckGo Search and `defer=True` critics.
+   - **Model Context Protocol (MCP)**: Dynamic tool discovery and stdio client connections to Pinecone and OpenBnB servers.
+   - **Policy & Text-to-SQL**: Deterministic decision-tree navigation and read-only PostgreSQL database introspection.
+   - **Deep Agents Quant Sandbox**: Isolated execution environment enforcing resource limits for Monte Carlo and portfolio optimization.
+4. **Dual-Database Storage Tier (`PostgreSQL :5432`)**: Strict separation of concerns between security and execution:
+   - `auth_db`: OWASP-compliant Argon2id user credentials, active statuses, and real-time revoked token blacklist (`psycopg==3.3.4`).
+   - `agent_db`: Thread checkpointing (`AsyncPostgresSaver`), binary state snapshots (`checkpoint_blobs`), and conversation histories (`PostgresChatMessageHistory`).
 
 ---
 
@@ -811,22 +767,6 @@ flowchart TD
     P1 --> P2 --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> Colophon
 ```
 
-##### Visual Exhibit Demonstrations:
-
-The charting engine generates publication-grade Matplotlib visual exhibits matching the burgundy institutional color palette:
-
-<p align="center">
-  <img src="./assets/chart_sector_mcap.png" alt="NIFTY 500 Sector Capitalization" width="700"/>
-</p>
-
-<p align="center">
-  <img src="./assets/chart_target_valuation.png" alt="Head-to-Head Valuation Multiples" width="700"/>
-</p>
-
-<p align="center">
-  <img src="./assets/chart_roe_pe_frontier.png" alt="Valuation vs Profitability Frontier" width="700"/>
-</p>
-
 ---
 
 #### I. LangChain Deep Agents Sandboxes Architecture (`app/core/sandbox/`)
@@ -834,43 +774,36 @@ The charting engine generates publication-grade Matplotlib visual exhibits match
 This platform adheres strictly to the official [LangChain Deep Agents Sandboxes specification](https://docs.langchain.com/oss/python/deepagents/sandboxes) to safely run untrusted quantitative financial algorithms, Monte Carlo paths, and algorithmic scripts.
 
 ```mermaid
-flowchart TD
-    subgraph HostPlane ["🖥️ Host Application Plane (FastAPI & LangGraph Orchestration)"]
-        User["Client / Browser / CLI"]
-        LLM["Deep Agents Orchestrator\n(ChatGroq / LangChain create_deep_agent)"]
-        Blackboard["SQLite Blackboard Run Memory\n(data/blackboard_{run_id}.db)"]
-        Secrets["Host Secrets & Environment\n(OPENAI_API_KEY, PINECONE_API_KEY, DATABASE_URL)"]
-    end
-
-    subgraph SecurityFilter ["🛡️ Security Sanitization & Isolation Barrier"]
-        EnvStrip["Environment Stripper\n(Whitelists ONLY PATH & TMPDIR;\nPurges all API keys, tokens & connection strings)"]
-        PathGuard["Path Guard & Boundary Validator\n(Prevents directory traversal outside sandbox)"]
-        ResourceGuard["Resource Watchdog\n(Enforces 512MB RAM ceiling, 1.0 CPU, 30s timeout)"]
-    end
-
-    subgraph SandboxPlane ["⚡ Isolated Sandbox Execution Plane (SandboxBackendProtocol)"]
+flowchart LR
+    subgraph Host ["1. Host Application Plane"]
         direction TB
-        subgraph Providers ["Pluggable Backend Providers (app/core/sandbox/)"]
-            Subproc["IsolatedSubprocessSandbox\n(Zero-dependency, ephemeral workspace)"]
-            Docker["DockerSandbox\n(--memory=512m --cpus=1.0 --network=none)"]
-            Cloud["LangSmithSandbox\n(Remote cloud sandbox integration)"]
-        end
-        
-        subgraph QuantTools ["Quantitative Financial Modeling Tools (app/tools/quant_models.py)"]
-            MC["Monte Carlo Price Simulator\n(5,000-Path GBM, VaR 95/99%, CVaR)"]
-            Markowitz["Markowitz Portfolio Optimizer\n(10,000 allocations, Max Sharpe weights)"]
-            CustomPy["Custom Python Executor\n(NumPy / SciPy algorithmic backtesting)"]
-        end
+        Agent["🤖 Deep Agents Swarm\n(LLM Orchestrator)"]
+        Blackboard["📝 SQLite Run Blackboard\n(State & Findings Store)"]
+        Agent <--> Blackboard
     end
 
-    User -->|REST / Chat Stream| LLM
-    LLM -->|Read / Write Findings| Blackboard
-    LLM -->|Dispatches Untrusted Math Code| SecurityFilter
-    Secrets -.->|BLOCK: Never passed to sandbox| SecurityFilter
-    
-    SecurityFilter --> Providers
-    Providers --> QuantTools
-    QuantTools -->|Structured JSON & Terminal Output| LLM
+    subgraph Security ["2. Security Isolation Barrier"]
+        direction TB
+        Sanitizer["🔒 Environment Stripper\n• Purges all API keys & DB secrets\n• Whitelists only safe env vars"]
+        Watchdog["⏱️ Resource Watchdog\n• Strict 512MB RAM ceiling\n• 1.0 CPU allocation\n• 30s timeout enforcement"]
+        Sanitizer --> Watchdog
+    end
+
+    subgraph SandboxPlane ["3. Isolated Execution Plane"]
+        direction TB
+        Provider["📦 Subprocess / Docker Sandbox\n(Ephemeral Directory, Network Disabled)"]
+        Quant["📊 Financial Quant Engines\n• 5,000-Path Monte Carlo GBM\n• Markowitz Portfolio Optimizer\n• Custom NumPy / SciPy Scripts"]
+        Provider --- Quant
+    end
+
+    subgraph Results ["4. Validated Output"]
+        JSON["⚡ Safe JSON Telemetry\n• Simulated Terminal Prices\n• VaR 95% / 99% & CVaR\n• Optimal Sharpe Ratio Weights"]
+    end
+
+    Agent -->|Dispatches Quant Code| Sanitizer
+    Watchdog --> Provider
+    Quant -->|Structured Metrics| JSON
+    JSON -->|Safe Return| Agent
 ```
 
 ##### 1. The "Sandbox-as-Tool" Pattern
