@@ -155,54 +155,46 @@ The authentication subsystem handles identity lifecycle events with industry-sta
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Client as Browser Client (SPA Fetch API)
-    participant Gateway as FastAPI Router (app/api/v1/endpoints/auth.py)
-    participant Security as Security & Crypto (pwdlib & pyjwt)
-    participant AuthDB as PostgreSQL auth_db (psycopg==3.3.4 pool)
+    actor Client as Browser (SPA)
+    participant Gateway as FastAPI Gateway
+    participant Crypto as Security Engine (Argon2id & JWT)
+    participant AuthDB as PostgreSQL (auth_db)
 
-    Note over Client,AuthDB: Scenario 1: User Registration (/auth/signup) [Pydantic: UserSignupRequest]
-    Client->>Gateway: POST /auth/signup (email, password, full_name)
+    Note over Client,AuthDB: 1. User Registration Flow (/auth/signup)
+    Client->>Gateway: POST /auth/signup (email, password, name)
     Gateway->>AuthDB: SELECT 1 FROM users WHERE email = %s
-    AuthDB-->>Gateway: None (User does not exist)
-    Gateway->>Security: pwdlib.hash(password) -> Argon2id ($argon2id$v=19$m=65536...)
-    Security-->>Gateway: Hashed password string
-    Gateway->>AuthDB: INSERT INTO users (id, email, hashed_password, role...) VALUES (%s...)
-    AuthDB-->>Gateway: Created User Record (UUID: 8f3b2a7d...)
+    AuthDB-->>Gateway: None (user not found)
+    Gateway->>Crypto: pwdlib.hash(password) ➔ Argon2id
+    Crypto-->>Gateway: Memory-hard hash string
+    Gateway->>AuthDB: INSERT INTO users (id, email, password_hash...)
     Gateway-->>Client: 201 Created (UserResponse without password)
 
-    Note over Client,AuthDB: Scenario 2: User Login & JWT Token Minting (/auth/login) [python-multipart]
-    Client->>Gateway: POST /auth/login (OAuth2 Form / JSON: username=email, password)
+    Note over Client,AuthDB: 2. User Login & JWT Issuance (/auth/login)
+    Client->>Gateway: POST /auth/login (email, password)
     Gateway->>AuthDB: SELECT * FROM users WHERE email = %s
-    AuthDB-->>Gateway: User Record (with hashed_password, is_active)
-    Gateway->>Security: pwdlib.verify(plain_pwd, hashed_pwd) [constant-time]
-    Security-->>Gateway: True (Password matched)
-    Gateway->>Security: pyjwt.encode(payload={sub, user_id, role, iat, exp, jti}, JWT_SECRET_KEY, HS256)
-    Security-->>Gateway: Signed Bearer JWT Access Token
-    Gateway-->>Client: 200 OK (TokenResponse: access_token, token_type: "bearer", expires_in: 60)
+    AuthDB-->>Gateway: User Record (password_hash, is_active)
+    Gateway->>Crypto: pwdlib.verify(plain, hash)
+    Crypto-->>Gateway: True (valid credentials)
+    Gateway->>Crypto: pyjwt.encode(sub, user_id, role, jti, exp)
+    Crypto-->>Gateway: Signed Bearer JWT (HS256)
+    Gateway-->>Client: 200 OK (access_token, bearer, expires_in)
 
-    Note over Client,AuthDB: Scenario 3: User Logout & Revocation (/auth/logout) [Depends(get_current_active_user)]
-    Client->>Gateway: POST /auth/logout (Header: Authorization: Bearer <token>)
-    Gateway->>Security: pyjwt.decode(token) -> Extract 'jti' and 'exp'
-    Security-->>Gateway: Claims Payload {jti, exp, sub...}
-    Gateway->>AuthDB: INSERT INTO token_blacklist (token_jti, user_id, expires_at) VALUES (%s, %s, %s)
-    AuthDB-->>Gateway: Row inserted & committed
-    Gateway-->>Client: 200 OK (MessageResponse: "Token revoked successfully")
+    Note over Client,AuthDB: 3. User Logout & JTI Revocation (/auth/logout)
+    Client->>Gateway: POST /auth/logout (Bearer <token>)
+    Gateway->>Crypto: pyjwt.decode(token) ➔ Extract "jti" & "exp"
+    Gateway->>AuthDB: INSERT INTO token_blacklist (token_jti, user_id, expires_at)
+    Gateway-->>Client: 200 OK ("Token revoked successfully")
 
-    Note over Client,AuthDB: Scenario 4: Password Reset Flow (/auth/forgot-password & /auth/reset-password)
+    Note over Client,AuthDB: 4. Password Reset Lifecycle (/auth/forgot-password & /auth/reset-password)
     Client->>Gateway: POST /auth/forgot-password (email)
-    Gateway->>AuthDB: SELECT id, email FROM users WHERE email = %s
-    AuthDB-->>Gateway: Found User Record
-    Gateway->>Security: pyjwt.encode(payload={sub, user_id, token_type='reset_password', exp=15m})
-    Security-->>Gateway: Reset JWT Token
-    Gateway->>Gateway: hashlib.sha256(reset_token.encode()).hexdigest()
-    Gateway->>AuthDB: INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (...)
-    Gateway-->>Client: 200 OK (reset_token generated)
+    Gateway->>Crypto: Generate 15m reset JWT & SHA-256 hash
+    Gateway->>AuthDB: INSERT INTO password_reset_tokens (token_hash, expires_at)
+    Gateway-->>Client: 200 OK (reset token generated)
     Client->>Gateway: POST /auth/reset-password (token, new_password)
-    Gateway->>Security: pyjwt.decode(token) -> Assert token_type == 'reset_password'
-    Gateway->>AuthDB: UPDATE password_reset_tokens SET is_used=TRUE WHERE token_hash=%s RETURNING user_id
-    Gateway->>Security: pwdlib.hash(new_password) -> New Argon2id Hash
-    Gateway->>AuthDB: UPDATE users SET hashed_password = %s WHERE id = %s
-    Gateway-->>Client: 200 OK (MessageResponse: "Password reset successfully")
+    Gateway->>AuthDB: UPDATE password_reset_tokens SET is_used=TRUE
+    Gateway->>Crypto: pwdlib.hash(new_password) ➔ New Argon2id Hash
+    Gateway->>AuthDB: UPDATE users SET hashed_password = %s
+    Gateway-->>Client: 200 OK ("Password reset successfully")
 ```
 
 ---
@@ -259,61 +251,47 @@ Once authorization succeeds, FastAPI injects the authenticated `UserResponse` ob
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Client as Browser Client (EventSource / Fetch API)
-    participant CORS as CORS & Router (fastapi.middleware.cors)
-    participant Deps as FastAPI Guard Pipeline (deps.py Depends(get_current_active_user))
-    participant AuthDB as PostgreSQL auth_db (psycopg==3.3.4 AsyncConnectionPool)
-    participant Middleware as Agent Middleware Suite (RateLimit, PII, HITL, Summarizer)
-    participant Endpoint as Guarded Endpoint Handler (app/api/v1/endpoints/*.py)
-    participant Engine as LangGraph Engine (astream_events version='v2')
-    participant AgentDB as PostgreSQL agent_db (AsyncPostgresSaver)
-    participant Langfuse as Langfuse Observability (langfuse==4.14.4 CallbackHandler)
+    actor Client as Browser Client
+    participant Gateway as FastAPI Gateway & Guard (deps.py)
+    participant AuthDB as PostgreSQL (auth_db)
+    participant Middleware as Agent Middleware Suite
+    participant Engine as LangGraph Engine
+    participant AgentDB as PostgreSQL (agent_db)
 
-    Client->>CORS: HTTP Request with Header: "Authorization: Bearer <jwt_access_token>"
-    CORS->>Deps: Invoke Dependency: get_current_active_user()
+    Client->>Gateway: HTTP Request with Header: "Authorization: Bearer <token>"
     
     rect rgb(240, 245, 255)
-        Note over Deps,AuthDB: Security Verification & Revocation Pipeline
-        Deps->>Deps: fastapi.security.OAuth2PasswordBearer extracts raw Bearer token string
-        Deps->>Deps: pyjwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'])
-        alt Signature Tampered or Expired (exp <= utcnow)
-            Deps-->>Client: 401 Unauthorized ("Token has expired" or "Invalid token")
+        Note over Gateway,AuthDB: 1. Security Verification & Revocation Check
+        Gateway->>Gateway: Decode JWT signature (HS256) & check expiration
+        Gateway->>AuthDB: SELECT 1 FROM token_blacklist WHERE token_jti = %s
+        alt Token Revoked (in blacklist) or Expired
+            Gateway-->>Client: 401 Unauthorized ("Token has been revoked or expired")
         end
-        Deps->>AuthDB: psycopg: SELECT 1 FROM token_blacklist WHERE token_jti = %s
-        alt Token JTI Found in Blacklist
-            AuthDB-->>Deps: Row Exists (Token was revoked via /auth/logout)
-            Deps-->>Client: 401 Unauthorized ("Token has been revoked. Please log in again.")
+        Gateway->>AuthDB: SELECT * FROM users WHERE email = %s
+        alt User Inactive or Missing
+            Gateway-->>Client: 403 Forbidden ("User account is deactivated")
         end
-        Deps->>AuthDB: psycopg: SELECT id, email, role, is_active FROM users WHERE email = %s
-        alt User Not Found or Inactive (is_active == False)
-            Deps-->>Client: 401 Unauthorized / 403 Forbidden ("User account is deactivated")
-        end
-        Deps->>Deps: Instantiate UserResponse(id=uuid, email=sub, role=role, is_active=True)
     end
 
-    Deps->>Endpoint: Inject current_user: UserResponse into route handler
-
     rect rgb(245, 255, 245)
-        Note over Endpoint,Middleware: Tenant Isolation & Middleware Interception
-        Endpoint->>Endpoint: Enforce Namespace: thread_id = f"user-{current_user.id}-{uuid.uuid4()}"
-        Endpoint->>Endpoint: get_runnable_config(thread_id, metadata={"user_id": current_user.id, "email": current_user.email})
-        Endpoint->>Middleware: pipeline.run_before_agent(state)
-        Middleware->>Middleware: RateLimitMiddleware: check sliding window timestamp queue (collections.deque per user_id)
-        alt Rate Limit Exceeded (> 60 req / 60s)
-            Middleware-->>Client: 429 Too Many Requests ("Rate limit exceeded. Retry in 60s")
+        Note over Gateway,Middleware: 2. Tenant Isolation & Middleware Interception
+        Gateway->>Gateway: Bind Thread Namespace: thread_id = f"user-{id}-{uuid}"
+        Gateway->>Middleware: pipeline.run_before_agent(state)
+        Middleware->>Middleware: RateLimitMiddleware: Sliding window check (60 req / 60s)
+        alt Rate Limit Exceeded
+            Middleware-->>Client: 429 Too Many Requests ("Rate limit exceeded")
         end
-        Middleware->>Middleware: PIIMiddleware: regex + Luhn scan -> mask SSN, credit cards, emails, PHI
+        Middleware->>Middleware: PIIMiddleware: Mask SSN, credit cards & PHI
     end
 
     rect rgb(255, 250, 240)
-        Note over Endpoint,Langfuse: Execution, Checkpointing & Real-Time Streaming
-        Endpoint->>Engine: graph.astream_events(inputs, config=thread_config, version="v2")
-        Engine<<->>AgentDB: AsyncPostgresSaver(pool): Save/Load thread checkpoint blobs & writes
-        Engine->>Langfuse: CallbackHandler records non-blocking traces, latency & token usage
-        Engine-->>Endpoint: Yield event dicts (on_chat_model_stream tokens, stage hints)
+        Note over Gateway,AgentDB: 3. Graph Execution, Checkpointing & SSE Streaming
+        Gateway->>Engine: astream_events(inputs, config=thread_config, version="v2")
+        Engine<<->>AgentDB: AsyncPostgresSaver: Save/Load thread checkpoint blobs
+        Engine-->>Gateway: Yield real-time streaming tokens & stage hints
     end
 
-    Endpoint-->>Client: FastAPI StreamingResponse: data: {"token": "...", "stage": "..."}\n\n (text/event-stream)
+    Gateway-->>Client: SSE StreamingResponse: text/event-stream (tokens & stages)
 ```
 
 ##### 1. User Isolation & Multi-Tenancy
@@ -346,31 +324,29 @@ Because standard browser WebSocket APIs cannot send custom HTTP authorization he
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Client as Browser WebSocket Client (new WebSocket)
-    participant Gateway as WebSocket Gateway (app/api/v1/endpoints/websocket.py)
-    participant Security as Security & AuthDB (pyjwt & psycopg==3.3.4)
-    participant LangGraph as LangGraph Execution Engine (astream_events)
-    participant Checkpointer as AsyncPostgresSaver (agent_db)
+    actor Client as Browser WebSocket Client
+    participant Gateway as WebSocket Gateway (/ws/interact)
+    participant Security as Security Guard (AuthDB & JWT)
+    participant Engine as LangGraph Engine
+    participant AgentDB as PostgreSQL (agent_db)
 
-    Client->>Gateway: WS Handshake: ws://localhost:8000/ws/interact?token=<JWT>
+    Client->>Gateway: Connect: ws://localhost:8000/ws/interact?token=<JWT>
     Gateway->>Security: authenticate_websocket(websocket)
-    Note over Gateway,Security: Extract token from websocket.query_params.get("token")
-    Security->>Security: pyjwt.decode(token, JWT_SECRET_KEY, algorithms=['HS256'])
-    Security->>Security: psycopg: SELECT 1 FROM token_blacklist WHERE token_jti = %s
-    Security->>Security: psycopg: SELECT * FROM users WHERE email = %s (assert is_active)
+    Security->>Security: Decode token (HS256) & check expiration
+    Security->>Security: Query token_blacklist & verify user.is_active
 
-    alt Validation Fails or Token Missing/Revoked
-        Gateway-->>Client: websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
-    else Validation Passes
-        Gateway-->>Client: await websocket.accept() (101 Switching Protocols)
-        Gateway->>Client: websocket.send_json({"type": "thread_id", "thread_id": "user-uuid..."})
+    alt Token Missing, Expired, or Blacklisted
+        Gateway-->>Client: websocket.close(code=1008, reason="Unauthorized")
+    else Authentication Successful
+        Gateway-->>Client: websocket.accept() (101 Switching Protocols)
+        Gateway->>Client: send_json({"type": "thread_id", "thread_id": "user-uuid..."})
         
-        loop Bi-directional Streaming Interaction
-            Client->>Gateway: websocket.receive_text() -> json.loads() {"action": "start" | "resume", "user_input": "..."}
-            Gateway->>LangGraph: astream_events(inputs, config=thread_config, version="v2")
-            LangGraph<<->>Checkpointer: AsyncPostgresSaver: persist state snapshots in agent_db
-            LangGraph-->>Gateway: Yield real-time model tokens and stage execution hints
-            Gateway-->>Client: websocket.send_json({"type": "token", "token": "..."})
+        loop Bi-directional Streaming
+            Client->>Gateway: send_json({"action": "start" | "resume", "user_input": "..."})
+            Gateway->>Engine: astream_events(inputs, config=thread_config, version="v2")
+            Engine<<->>AgentDB: AsyncPostgresSaver: Save state checkpoint
+            Engine-->>Gateway: Stream tokens & stage hints
+            Gateway-->>Client: send_json({"type": "token", "token": "..."})
         end
     end
 ```
@@ -494,16 +470,16 @@ Every stage of the authentication, authorization, database persistence, and agen
 
 ```mermaid
 flowchart TD
-    Start([User Request]) --> UserInitPath[1. user_initpath\nExtract User Decision & Path]
-    UserInitPath --> ClassifyNode[2. classify_node\nStructured Pydantic Classifier with Retries]
+    Start(["__start__ (User Request)"]) --> UserInitPath["1. user_initpath\n(Extract User Decision & Path)"]
+    UserInitPath --> ClassifyNode{"2. classify_node\n(Pydantic Router)"}
     
-    ClassifyNode -- "exit" --> EndNode([END])
-    ClassifyNode -- "generic" --> FeedbackLoop[6. process_feedback\nHuman-in-the-Loop Interrupt]
-    ClassifyNode -- "policy / useDeviceData=True" --> DeviceSummary[3. device_summary\nExtract & Summarize System Specs]
-    ClassifyNode -- "policy / useDeviceData=False" --> KnowledgeBase[4. knowledge_base\nHybrid BM25 + Dense Retrieval]
+    ClassifyNode -->|exit| EndNode(["__end__"])
+    ClassifyNode -->|generic / unclear| FeedbackLoop["6. process_feedback\n(HITL Interrupt & Clarification)"]
+    ClassifyNode -->|policy & useDeviceData| DeviceSummary["3. device_summary\n(Parse Hardware Telemetry)"]
+    ClassifyNode -->|policy standard| KnowledgeBase["4. knowledge_base\n(Hybrid BM25 + Vector Retrieval)"]
     
     DeviceSummary --> KnowledgeBase
-    KnowledgeBase --> ReasonLLM[5. reason_llm\nDomain Policy Reasoning & SSE Tag]
+    KnowledgeBase --> ReasonLLM["5. reason_llm\n(Domain Policy Synthesis)"]
     ReasonLLM --> FeedbackLoop
     FeedbackLoop --> ClassifyNode
 ```
@@ -515,39 +491,34 @@ flowchart TD
 </p>
 
 ```mermaid
-graph TD;
-	__start__(["__start__"]):::first
-	planner["planner"]
-	approver["approver<br/><small><em>autonomous review</em></small>"]
-	researcher_dispatcher["researcher_dispatcher"]
-	researcher["researcher<br/><small><em>DuckDuckGo live search</em></small>"]
-	synthesizer["synthesizer"]
-	fact_critic["fact_critic<br/><small><em>Branch A: Fact Audit</em></small>"]
-	style_critic_1["style_critic_1<br/><small><em>Branch B1: Tone & Clarity</em></small>"]
-	style_critic_2["style_critic_2<br/><small><em>Branch B2: Executive Polish</em></small>"]
-	publisher["publisher<hr/><small><em>defer = True</em></small>"]
-	__end__(["__end__"]):::last
-	
-	__start__ --> planner;
-	planner --> approver;
-	approver -. "revise" .-> planner;
-	approver -. "dispatch" .-> researcher_dispatcher;
-	researcher_dispatcher --> researcher;
-	researcher --> synthesizer;
-	
-	%% Parallel Fan-Out
-	synthesizer --> fact_critic;
-	synthesizer --> style_critic_1;
-	style_critic_1 --> style_critic_2;
-	
-	%% Fan-In with defer=True
-	fact_critic --> publisher;
-	style_critic_2 --> publisher;
-	publisher --> __end__;
-	
-	classDef default fill:#f2f0ff,line-height:1.2
-	classDef first fill-opacity:0
-	classDef last fill:#bfb6fc
+flowchart TD
+    Start(["__start__"]) --> Planner["1. planner\n(Formulate Search Strategy)"]
+    Planner --> Approver{"2. approver\n(Autonomous Review)"}
+    
+    Approver -->|revise plan| Planner
+    Approver -->|dispatch| Dispatcher["3. researcher_dispatcher"]
+    
+    Dispatcher --> Researcher["4. researcher\n(DuckDuckGo Live Web Search)"]
+    Researcher --> Synthesizer["5. synthesizer\n(Draft Intelligence Report)"]
+    
+    subgraph ParallelCritics ["Parallel Multi-Critic Review"]
+        FactCritic["6a. fact_critic\n(Fact Audit & Grounding)"]
+        StyleCritic1["6b. style_critic_1\n(Tone & Clarity Review)"]
+        StyleCritic2["6c. style_critic_2\n(Executive Polish)"]
+        
+        StyleCritic1 --> StyleCritic2
+    end
+    
+    Synthesizer --> FactCritic
+    Synthesizer --> StyleCritic1
+    
+    subgraph FanIn ["Parallel Join (defer = True)"]
+        Publisher["7. publisher\n(Publish Markdown Report)"]
+    end
+    
+    FactCritic --> Publisher
+    StyleCritic2 --> Publisher
+    Publisher --> EndNode(["__end__"])
 ```
 
 #### C. Model Context Protocol (MCP) Multi-Agent Intelligence Graphs
@@ -560,11 +531,15 @@ graph TD;
 
 ```mermaid
 flowchart TD
-    Start([User Harry Potter Complex Question]) --> HPSearchAgent[1. hpSearchAgent\nMulti-Hop ReAct Agent\nPinecone MCP Index: hpvdb-openai\nTools: search-records, list-indexes,\ndescribe-index-stats, rerank-documents,\ncascading-search, search-docs]
-    HPSearchAgent -->|Multi-Hop Trace & Reranked Passages| HPLoreScholar[2. hpLoreScholar\nMaster Lore Scholar Synthesizer\nChronological Causal Chain Analysis]
-    HPLoreScholar --> EndNode([END])
+    Start(["User Complex QA"]) --> SearchAgent["1. hpSearchAgent\n(Multi-Hop ReAct Agent)"]
     
-    classDef default fill:#f2f0ff,line-height:1.2
+    subgraph PineconeMCP ["Pinecone Vector Database (hpvdb-openai)"]
+        Tools["MCP Tools:\n• search-records & cascading-search\n• rerank-documents\n• describe-index-stats & search-docs"]
+    end
+    
+    SearchAgent <--> Tools
+    SearchAgent -->|Causal Trace & Passages| Scholar["2. hpLoreScholar\n(Master Lore Synthesizer)"]
+    Scholar --> EndNode(["Final Narrative Explanation"])
 ```
 
 ##### Mode 2: 🏨 Airbnb Travel & Lodging Graph (`@openbnb/mcp-server-airbnb` + WeatherAPI)
@@ -575,39 +550,53 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Start([User Travel Query]) --> AirbnbAgent[1. airbnbAgent\nReAct Agent with Airbnb MCP Tools]
-    Start --> WeatherAgent[2. weatherAgent\nReAct Agent with WeatherAPI / Open-Meteo]
+    Start(["User Travel Query"]) --> Split{Query Splitter}
     
-    AirbnbAgent --> TourAgent[3. tourAgent\nTour Guide Synthesizer & Stay-Weather Match]
+    subgraph ParallelTools ["Parallel Tool Intelligence Gathering"]
+        AirbnbAgent["1. airbnbAgent\n(@openbnb/mcp-server-airbnb)\nFind listings, pricing & reviews"]
+        WeatherAgent["2. weatherAgent\n(WeatherAPI / Open-Meteo)\nFetch forecasts & climate trends"]
+    end
+    
+    Split --> AirbnbAgent
+    Split --> WeatherAgent
+    
+    AirbnbAgent --> TourAgent["3. tourAgent\n(Concierge Synthesizer)\nMatches stays to weather conditions"]
     WeatherAgent --> TourAgent
-    TourAgent --> EndNode([END])
-    
-    classDef default fill:#f2f0ff,line-height:1.2
+    TourAgent --> EndNode(["Curated Itinerary & Stay Recommendation"])
 ```
 
 #### D. Text-to-SQL Analyst Architecture Graph (`SQLDatabaseToolkit`)
 ```mermaid
-flowchart TD
-    Start([User Natural Language Query]) --> SQLAgent[1. create_sql_agent\nSQLDatabaseToolkit Orchestrator]
-    SQLAgent --> ListTables[2. sql_db_list_tables\nSchema Introspection & Table Discovery]
-    ListTables --> QueryChecker[3. sql_db_query_checker\nSyntax Validation & Dialect Correction]
-    QueryChecker --> ExecuteSQL[4. sql_db_query\nSafe Read-Only PostgreSQL Execution]
-    ExecuteSQL --> Synthesizer[5. Tabular Data & Explanation Synthesizer]
-    Synthesizer --> EndNode([Synthesized Explanation & Interactive Data Table])
+flowchart LR
+    Start(["User Query\n(Natural Language)"]) --> Agent["1. create_sql_agent\n(SQLDatabaseToolkit)"]
     
-    classDef default fill:#f2f0ff,line-height:1.2
+    subgraph SafetyLoop ["Inspection & Safety Boundary"]
+        Tables["2. sql_db_list_tables\n(Introspect Schema)"]
+        Checker["3. sql_db_query_checker\n(Syntax & Dialect Guard)"]
+        Execute["4. sql_db_query\n(Safe Read-Only SELECT)"]
+        
+        Tables --> Checker --> Execute
+    end
+    
+    Agent --> Tables
+    Execute --> Synthesizer["5. Synthesizer\n(Tabular Data & Context)"]
+    Synthesizer --> Result(["Structured Table & Explanation"])
 ```
 
 #### E. General Assistant Memory Graph (`PostgresChatMessageHistory`)
 ```mermaid
-flowchart TD
-    Start([User Message + Session ID]) --> FetchHistory[1. PostgresChatMessageHistory\nThread Checkpoint & Session Memory Retrieval]
-    FetchHistory --> ContextAssembler[2. Context & History Assembler\nTrim & Token Budget Window]
-    ContextAssembler --> ChatLLM[3. ChatGroq Inference\nStateful Conversational Generation]
-    ChatLLM --> AppendHistory[4. Append Message & Update Postgres Checkpoint]
-    AppendHistory --> EndNode([Streaming Response & Memory Persisted])
+flowchart LR
+    Start(["User Message\n(+ Session ID)"]) --> Fetch["1. Memory Fetch\n(PostgresChatMessageHistory)"]
     
-    classDef default fill:#f2f0ff,line-height:1.2
+    subgraph ContextManagement ["Context & Token Budgeting"]
+        Assemble["2. Context Assembler\n(Sliding Window & Trimming)"]
+        LLM["3. ChatGroq Inference\n(Stateful LLM Generation)"]
+        Assemble --> LLM
+    end
+    
+    Fetch --> Assemble
+    LLM --> Persist["4. Memory Persist\n(Append Turn to PostgreSQL)"]
+    Persist --> Stream(["Streaming Output\n(SSE Real-Time Tokens)"])
 ```
 
 #### F. Institutional NSE Stock Analysis Swarm Architecture (`deepagents` + DuckDB + Pinecone MCP + Yahoo Finance + GNews)
@@ -617,53 +606,56 @@ flowchart TD
 </p>
 
 ```mermaid
-graph TD;
-	__start__(["__start__"]):::first
-	deterministic_ingest["1. deterministic_ingest<br/><small><em>NIFTY 500 CSV -> DuckDB & Pinecone MCP</em></small>"]
-	richness_assessor["2. richness_assessor<br/><small><em>Data Completeness & Lens Gating</em></small>"]
-	planner["3. planner<br/><small><em>Master Deep Agent Strategy & Subgoals</em></small>"]
-	analyst_fanout["4. analyst_fanout<br/><small><em>13 Deep Agent Lenses + Middlewares</em></small>"]
-	reflection["5. reflection<br/><small><em>Coverage & Gap Evaluation</em></small>"]
-	followup_analysis["6. followup_analysis<br/><small><em>Targeted Gap Funding</em></small>"]
-	gather["7. gather<br/><small><em>SQLite Blackboard Synchronization</em></small>"]
-	verify["8. verify<br/><small><em>4-Tier Numeric, Quote, Digit & Skeptic Audit</em></small>"]
-	judge["9. judge<br/><small><em>Deduplication, Ranking & Headlines</em></small>"]
-	narrative_enrich["10. narrative_enrich<br/><small><em>Pinecone MCP Vector Context - No LLM</em></small>"]
-	chart_agent["11a. chart_agent<br/><small><em>Matplotlib Realized Plots + Chart Critic</em></small>"]
-	section_writers["11b. section_writers<br/><small><em>7 Spine Section Writers</em></small>"]
-	exec_summary["11c. exec_summary<br/><small><em>CIO Actionable Briefing</em></small>"]
-	assembler["12. assembler<hr/><small><em>defer = True</em></small>"]
-	chart_curator["13. chart_curator<br/><small><em>Top Exhibits & figures.json</em></small>"]
-	__end__(["__end__"]):::last
+flowchart TD
+    Start(["__start__"]) --> Ingest
 
-	__start__ --> deterministic_ingest;
-	deterministic_ingest --> richness_assessor;
-	richness_assessor --> planner;
-	planner --> analyst_fanout;
-	analyst_fanout --> reflection;
-	reflection -. "followup" .-> followup_analysis;
-	reflection -.-> gather;
-	followup_analysis --> gather;
-	gather -.-> verify;
-	gather -.-> judge;
-	verify --> judge;
-	judge --> narrative_enrich;
-	
-	%% Parallel Synthesis Join (defer = True)
-	narrative_enrich --> chart_agent;
-	narrative_enrich --> section_writers;
-	narrative_enrich --> exec_summary;
-	
-	chart_agent --> assembler;
-	section_writers --> assembler;
-	exec_summary --> assembler;
-	
-	assembler --> chart_curator;
-	chart_curator --> __end__;
+    subgraph Stage1 ["1. Data Ingestion & Strategy Planning"]
+        Ingest["1. deterministic_ingest\n(NIFTY 500 ➔ DuckDB & Pinecone MCP)"]
+        Assessor["2. richness_assessor\n(Completeness & Lens Gating)"]
+        Planner["3. planner\n(Master Deep Agent Strategy & Subgoals)"]
+        
+        Ingest --> Assessor --> Planner
+    end
 
-	classDef default fill:#f2f0ff,line-height:1.2
-	classDef first fill-opacity:0
-	classDef last fill:#bfb6fc
+    subgraph Stage2 ["2. Swarm Execution & Reflection"]
+        Fanout["4. analyst_fanout\n(13 Parallel Specialized Lenses)"]
+        Reflection{"5. reflection\n(Coverage & Gap Evaluation)"}
+        Followup["6. followup_analysis\n(Targeted Gap Resolution)"]
+        
+        Fanout --> Reflection
+        Reflection -->|gap detected| Followup
+    end
+
+    subgraph Stage3 ["3. Evidence Audit & Verification"]
+        Gather["7. gather\n(Blackboard Synchronization)"]
+        Verify["8. verify\n(4-Tier Numeric, Quote & Skeptic Audit)"]
+        Judge["9. judge\n(Deduplication, Ranking & Severity)"]
+        Enrich["10. narrative_enrich\n(Pinecone Vector Context)"]
+        
+        Gather --> Verify --> Judge --> Enrich
+    end
+
+    subgraph Stage4 ["4. Parallel Dossier Synthesis & Curation"]
+        ChartAgent["11a. chart_agent\n(Matplotlib Plots & Critic)"]
+        SectionWriters["11b. section_writers\n(7 Spine Sections)"]
+        ExecSummary["11c. exec_summary\n(CIO Briefing)"]
+        
+        Assembler["12. assembler\n(HTML Dossier Assembly, defer = True)"]
+        Curator["13. chart_curator\n(Exhibit Scoring & figures.json)"]
+        
+        ChartAgent --> Assembler
+        SectionWriters --> Assembler
+        ExecSummary --> Assembler
+        Assembler --> Curator
+    end
+
+    Planner --> Fanout
+    Reflection -->|coverage passed| Gather
+    Followup --> Gather
+    Enrich --> ChartAgent
+    Enrich --> SectionWriters
+    Enrich --> ExecSummary
+    Curator --> EndNode(["__end__"])
 ```
 
 ##### 15-Node Quantitative Pipeline Architecture:
@@ -699,49 +691,48 @@ The stock swarm features an autonomous **Master Deep Agent Planning & Strategic 
 
 ```mermaid
 flowchart TD
-    UserQuery(["💬 User Natural Language Query\n'compare HDFC Bank and Reliance performance for next 6 months'\n'research on HDFC Bank in depth'"])
-    
-    subgraph DeepPlanner ["🧠 Master Deep Agent Planning Subsystem (app/graphs/stock_analysis/nodes.py)"]
-        Reasoner["StockQueryReasoner (app/tools/stock_query_reasoner.py)\n• Entity & Alias Disambiguation (HDFC Bank -> HDFCBANK, Reliance -> RELIANCE)\n• Analysis Mode Selection: single_stock | comparison | sector\n• Horizon Mapping: 6 Months -> 126 Trading Days, 1 Year -> 252 Trading Days"]
-        ThesisGen["Master Strategic Thesis & Execution Plan Generator\n• Formulates Phase 1-5 Milestone Roadmap\n• Establishes Prioritized Subgoals (SG_VAL, SG_MOM, SG_RISK, SG_QUANT)\n• Identifies & Gates Cognitive Valuation Traps"]
-        BlackboardInit["SQLite Blackboard Run Memory (data/blackboard_{run_id}.db)\n• Ingestion of Target Tickers, Subgoals, and Lens Briefs"]
+    UserQuery(["💬 User Natural Language Query\n'compare HDFC Bank and Reliance performance for next 6 months'"])
+
+    subgraph Planner ["1. Master Deep Agent Planner (StockQueryReasoner)"]
+        Decomp["• Resolves Entities & Tickers: 'HDFC Bank' ➔ HDFCBANK, 'Reliance' ➔ RELIANCE\n• Determines Analysis Mode: comparative | in-depth | sector\n• Maps Time Horizon: 6 Months ➔ 126 Trading Days\n• Formulates Strategic Thesis & Prioritized Subgoals"]
+        Blackboard[("SQLite Run Blackboard\n(Target Tickers, Subgoals & Execution State)")]
+        Decomp --> Blackboard
     end
 
-    UserQuery --> Reasoner
-    Reasoner --> ThesisGen
-    ThesisGen --> BlackboardInit
-
-    subgraph MultiStore ["📚 Coordinated Multi-Store Heterogeneous Data Tier"]
-        CSVStore[("1. CSV Directory (data/nifty500.csv)\n• Official NSE NIFTY 500 constituents\n• ISIN, Sector, Industry mapping")]
-        DuckDBStore[("2. DuckDB In-Memory Analytical Fact Store\n• Ultra-fast columnar SQL fact store\n• Multiples (P/E, P/B), ROCE, ROE, 1M/6M/1Y Momentum\n• Ground truth proof verification engine")]
-        GNewsStore[("3. GNews Real-Time Media Intelligence\n• Live Indian financial press headlines\n• Sentiment tracking & corporate disclosures")]
-        YFStore[("4. Yahoo Finance PyPI Suite (7 Deep Agent Tools)\n• Real-time spot quotes & bid/ask spreads\n• Multi-stock comparative price histories\n• Forward analyst targets & upside consensus")]
-        QuantSandboxStore[("5. Deep Agents Quant Sandbox\n• Isolated Subprocess / Docker runtime (512MB RAM)\n• 5,000-Path Monte Carlo GBM forward price projection\n• Markowitz Mean-Variance Max Sharpe portfolio optimization")]
+    subgraph Ingestion ["2. Multi-Store Heterogeneous Data Tier"]
+        CSV["📁 CSV Directory\n(NIFTY 500 Metadata)"]
+        DuckDB["🦆 DuckDB Fact Store\n(Columnar SQL & Multiples)"]
+        GNews["📰 GNews Intelligence\n(Live Press & Sentiment)"]
+        YFinance["📈 Yahoo Finance\n(Real-Time Prices & Targets)"]
+        QuantSandbox["⚡ Deep Agents Sandbox\n(Monte Carlo & Markowitz)"]
     end
 
-    BlackboardInit --> CSVStore
-    BlackboardInit --> DuckDBStore
-    BlackboardInit --> GNewsStore
-    BlackboardInit --> YFStore
-    BlackboardInit --> QuantSandboxStore
-
-    subgraph SwarmLenses ["⚡ Parallel Deep Analyst Swarm (analyst_fanout_node)"]
-        L1["Effectiveness Lens (Valuation & Multiples)"]
-        L2["Temporal Lens (Momentum & 126d Monte Carlo)"]
-        L3["Harm Attribution (Leverage & Debt Audit)"]
-        L4["Discovery Lens (Institutional Holdings & FII)"]
-        L5["Systemic Risk Lens (Beta & Sector Exposure)"]
-        L6["Portfolio Optimization (Markowitz Max Sharpe)"]
-        LRest["Remaining 7 Specialized Analytical Lenses..."]
+    subgraph Swarm ["3. Parallel Analyst Swarm (13 Specialized Lenses)"]
+        Lenses["Parallel Analysis Lenses\n• Valuation Multiples • Temporal Momentum & 126d MC\n• Debt & Leverage Audit • Systemic Risk & Beta • Max Sharpe Portfolio"]
+        Findings["📋 Candidate Findings & Proof Verification Citations"]
+        Lenses --> Findings
     end
 
-    CSVStore --> SwarmLenses
-    DuckDBStore --> SwarmLenses
-    GNewsStore --> SwarmLenses
-    YFStore --> SwarmLenses
-    QuantSandboxStore --> SwarmLenses
-    SwarmLenses <-->|Bidirectional candidate findings & SQL proofs| BlackboardInit
+    UserQuery --> Decomp
+    Blackboard --> Ingestion
+    Ingestion --> Lenses
+    Findings -->|Synchronize Evidence & Citations| Blackboard
 ```
+
+The subsystem executes across 3 coordinated phases:
+1. **Query Reasoning & Decomposition (`StockQueryReasoner`)**:
+   - Disambiguates free-form entities to official NSE tickers (e.g., *"HDFC Bank"* ➔ `HDFCBANK`, *"Reliance"* ➔ `RELIANCE`).
+   - Automatically detects the analytical mode (`single_stock`, `comparison`, or `sector`).
+   - Converts natural language horizons into deterministic trading days (e.g., *6 months* ➔ `126`, *1 year* ➔ `252`).
+   - Establishes a phased milestone roadmap and initializes the SQLite Blackboard (`data/blackboard_{run_id}.db`).
+2. **Multi-Store Heterogeneous Ingestion**:
+   - **`data/nifty500.csv`**: ISINs, industry classifications, and constituent universe data.
+   - **DuckDB In-Memory Fact Store**: High-throughput columnar SQL queries for valuation ratios (P/E, P/B, EV/EBITDA), ROE, ROCE, and momentum returns.
+   - **GNews Media Intelligence**: Live sentiment tracking and regulatory press releases.
+   - **Yahoo Finance Suite**: Real-time spot pricing, technical momentum, and forward Wall Street consensus targets.
+   - **Deep Agents Quant Sandbox**: Safe execution of 5,000-path Monte Carlo price paths and Markowitz mean-variance optimization.
+3. **Parallel Swarm Convergence**:
+   - 13 specialized analytical lenses analyze data simultaneously and commit structured findings, severity badges, and ground-truth proof citations back to the run blackboard.
 
 ---
 
@@ -751,20 +742,37 @@ The generated publication research report is styled as an **Institutional Equity
 
 ```mermaid
 flowchart TD
-    subgraph AssemblyPipeline ["📑 Institutional Dossier Compilation Pipeline (assembler_node & chart_curator_node)"]
-        P1["📄 Page 1: Cover Page\n• Burgundy Confidentiality Pill Tag\n• Dossier Title & Subtitle\n• Verified Provenance Notice (DuckDB, GNews, YF)\n• Soft Rose Thesis Box (#fff1f2 / 4px #8b1528 border)\n• Summary Statistics & Accent Rule"]
-        P2["📄 Page 2: Table of Contents\n• Clean 7-Part Numbered Analytical Index\n• Page-break rules for printing"]
-        S1["1. Executive Summary\n• Prose synthesis (zero unicode citation artifacts)\n• Bullet findings with severity tags (Critical / High)"]
-        S2["2. Master Deep Agent Strategic Plan\n• Strategic Thesis Callout\n• Phased Execution Roadmap & Prioritized Subgoals\n• Cognitive & Valuation Traps Gated"]
-        S3["3. Head-to-Head Comparative Scorecard\n• Deep Burgundy Header (#8b1528) with White Text\n• MCap, P/E, P/B, ROE%, ROCE%, D/E, Beta, 6M Ret%"]
-        S4["4. Verified Analytical Findings Cards\n• Severity Badges: CRITICAL / HIGH / MEDIUM\n• Soft Rose Problem Statement Box\n• 4 Subsections: Evidence, Driver, Risk, Recommendation"]
-        S5["5. Deterministic Spine Sections\n• 7 Analytical Pillars (5.1 to 5.7)"]
-        S6["6. Curated Exhibits & Figures\n• Deep Burgundy Bar Palette (#8b1528)\n• Top/Right Spines Removed, Horizontal-Only Gridlines\n• Figure X. [Title] Captions & Critic Approval Tags"]
-        S7["7. Quantitative Sandbox Modeling\n• Isolated DeepAgent Sandbox Execution Profile\n• Formatted Monte Carlo & Markowitz Telemetry JSON"]
-        Colophon["📜 Page 51: Colophon & Governance Notice\n• Strict Verification Notice & Legal Compliance Disclaimer"]
-    end
+    subgraph Dossier ["📑 Institutional Surveillance Dossier Structure"]
+        direction TB
+        
+        subgraph FrontMatter ["I. Dossier Front Matter"]
+            P1["📄 Page 1: Cover Page\n• Burgundy Confidentiality Pill\n• Dossier Title & Provenance\n• Soft Rose Thesis Callout (#fff1f2)"]
+            P2["📄 Page 2: Table of Contents\n• 7-Part Analytical Index\n• Numbered Pagination"]
+            P1 --> P2
+        end
 
-    P1 --> P2 --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> Colophon
+        subgraph ExecCore ["II. Executive Synthesis"]
+            S1["1. Executive Summary\n• Prose synthesis & bullet findings\n• Severity badges (Critical / High)"]
+            S2["2. Strategic Execution Plan\n• Master Deep Agent Roadmap\n• Phased Subgoals & Trap Gates"]
+            S3["3. Comparative Scorecard\n• Deep Burgundy Header Table\n• Multiples, ROE, ROCE, Beta"]
+            S1 --> S2 --> S3
+        end
+
+        subgraph ForensicBody ["III. Forensic Evidence & Pillars"]
+            S4["4. Verified Findings Cards\n• Evidence, Driver, Risk & Action\n• Hard Ground-Truth Proofs"]
+            S5["5. Deterministic Spine\n• 7 Analytical Pillars (5.1-5.7)\n• Macro, Moat & Valuation"]
+            S4 --> S5
+        end
+
+        subgraph ExhibitsGov ["IV. Exhibits & Governance"]
+            S6["6. Curated Exhibits & Figures\n• Institutional Burgundy Palette\n• Headless Matplotlib Visuals"]
+            S7["7. Quant Sandbox Modeling\n• Monte Carlo GBM Price Paths\n• Markowitz Optimal Weights"]
+            Colophon["📜 Page 51: Colophon & Notice\n• Strict Verification Notice\n• Disclaimer & Methodology"]
+            S6 --> S7 --> Colophon
+        end
+
+        FrontMatter --> ExecCore --> ForensicBody --> ExhibitsGov
+    end
 ```
 
 ---
