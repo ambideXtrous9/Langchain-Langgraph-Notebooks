@@ -699,49 +699,48 @@ The stock swarm features an autonomous **Master Deep Agent Planning & Strategic 
 
 ```mermaid
 flowchart TD
-    UserQuery(["💬 User Natural Language Query\n'compare HDFC Bank and Reliance performance for next 6 months'\n'research on HDFC Bank in depth'"])
-    
-    subgraph DeepPlanner ["🧠 Master Deep Agent Planning Subsystem (app/graphs/stock_analysis/nodes.py)"]
-        Reasoner["StockQueryReasoner (app/tools/stock_query_reasoner.py)\n• Entity & Alias Disambiguation (HDFC Bank -> HDFCBANK, Reliance -> RELIANCE)\n• Analysis Mode Selection: single_stock | comparison | sector\n• Horizon Mapping: 6 Months -> 126 Trading Days, 1 Year -> 252 Trading Days"]
-        ThesisGen["Master Strategic Thesis & Execution Plan Generator\n• Formulates Phase 1-5 Milestone Roadmap\n• Establishes Prioritized Subgoals (SG_VAL, SG_MOM, SG_RISK, SG_QUANT)\n• Identifies & Gates Cognitive Valuation Traps"]
-        BlackboardInit["SQLite Blackboard Run Memory (data/blackboard_{run_id}.db)\n• Ingestion of Target Tickers, Subgoals, and Lens Briefs"]
+    UserQuery(["💬 User Natural Language Query\n'compare HDFC Bank and Reliance performance for next 6 months'"])
+
+    subgraph Planner ["1. Master Deep Agent Planner (StockQueryReasoner)"]
+        Decomp["• Resolves Entities & Tickers: 'HDFC Bank' ➔ HDFCBANK, 'Reliance' ➔ RELIANCE\n• Determines Analysis Mode: comparative | in-depth | sector\n• Maps Time Horizon: 6 Months ➔ 126 Trading Days\n• Formulates Strategic Thesis & Prioritized Subgoals"]
+        Blackboard[("SQLite Run Blackboard\n(Target Tickers, Subgoals & Execution State)")]
+        Decomp --> Blackboard
     end
 
-    UserQuery --> Reasoner
-    Reasoner --> ThesisGen
-    ThesisGen --> BlackboardInit
-
-    subgraph MultiStore ["📚 Coordinated Multi-Store Heterogeneous Data Tier"]
-        CSVStore[("1. CSV Directory (data/nifty500.csv)\n• Official NSE NIFTY 500 constituents\n• ISIN, Sector, Industry mapping")]
-        DuckDBStore[("2. DuckDB In-Memory Analytical Fact Store\n• Ultra-fast columnar SQL fact store\n• Multiples (P/E, P/B), ROCE, ROE, 1M/6M/1Y Momentum\n• Ground truth proof verification engine")]
-        GNewsStore[("3. GNews Real-Time Media Intelligence\n• Live Indian financial press headlines\n• Sentiment tracking & corporate disclosures")]
-        YFStore[("4. Yahoo Finance PyPI Suite (7 Deep Agent Tools)\n• Real-time spot quotes & bid/ask spreads\n• Multi-stock comparative price histories\n• Forward analyst targets & upside consensus")]
-        QuantSandboxStore[("5. Deep Agents Quant Sandbox\n• Isolated Subprocess / Docker runtime (512MB RAM)\n• 5,000-Path Monte Carlo GBM forward price projection\n• Markowitz Mean-Variance Max Sharpe portfolio optimization")]
+    subgraph Ingestion ["2. Multi-Store Heterogeneous Data Tier"]
+        CSV["📁 CSV Directory\n(NIFTY 500 Metadata)"]
+        DuckDB["🦆 DuckDB Fact Store\n(Columnar SQL & Multiples)"]
+        GNews["📰 GNews Intelligence\n(Live Press & Sentiment)"]
+        YFinance["📈 Yahoo Finance\n(Real-Time Prices & Targets)"]
+        QuantSandbox["⚡ Deep Agents Sandbox\n(Monte Carlo & Markowitz)"]
     end
 
-    BlackboardInit --> CSVStore
-    BlackboardInit --> DuckDBStore
-    BlackboardInit --> GNewsStore
-    BlackboardInit --> YFStore
-    BlackboardInit --> QuantSandboxStore
-
-    subgraph SwarmLenses ["⚡ Parallel Deep Analyst Swarm (analyst_fanout_node)"]
-        L1["Effectiveness Lens (Valuation & Multiples)"]
-        L2["Temporal Lens (Momentum & 126d Monte Carlo)"]
-        L3["Harm Attribution (Leverage & Debt Audit)"]
-        L4["Discovery Lens (Institutional Holdings & FII)"]
-        L5["Systemic Risk Lens (Beta & Sector Exposure)"]
-        L6["Portfolio Optimization (Markowitz Max Sharpe)"]
-        LRest["Remaining 7 Specialized Analytical Lenses..."]
+    subgraph Swarm ["3. Parallel Analyst Swarm (13 Specialized Lenses)"]
+        Lenses["Parallel Analysis Lenses\n• Valuation Multiples • Temporal Momentum & 126d MC\n• Debt & Leverage Audit • Systemic Risk & Beta • Max Sharpe Portfolio"]
+        Findings["📋 Candidate Findings & Proof Verification Citations"]
+        Lenses --> Findings
     end
 
-    CSVStore --> SwarmLenses
-    DuckDBStore --> SwarmLenses
-    GNewsStore --> SwarmLenses
-    YFStore --> SwarmLenses
-    QuantSandboxStore --> SwarmLenses
-    SwarmLenses <-->|Bidirectional candidate findings & SQL proofs| BlackboardInit
+    UserQuery --> Decomp
+    Blackboard --> Ingestion
+    Ingestion --> Lenses
+    Findings -->|Synchronize Evidence & Citations| Blackboard
 ```
+
+The subsystem executes across 3 coordinated phases:
+1. **Query Reasoning & Decomposition (`StockQueryReasoner`)**:
+   - Disambiguates free-form entities to official NSE tickers (e.g., *"HDFC Bank"* ➔ `HDFCBANK`, *"Reliance"* ➔ `RELIANCE`).
+   - Automatically detects the analytical mode (`single_stock`, `comparison`, or `sector`).
+   - Converts natural language horizons into deterministic trading days (e.g., *6 months* ➔ `126`, *1 year* ➔ `252`).
+   - Establishes a phased milestone roadmap and initializes the SQLite Blackboard (`data/blackboard_{run_id}.db`).
+2. **Multi-Store Heterogeneous Ingestion**:
+   - **`data/nifty500.csv`**: ISINs, industry classifications, and constituent universe data.
+   - **DuckDB In-Memory Fact Store**: High-throughput columnar SQL queries for valuation ratios (P/E, P/B, EV/EBITDA), ROE, ROCE, and momentum returns.
+   - **GNews Media Intelligence**: Live sentiment tracking and regulatory press releases.
+   - **Yahoo Finance Suite**: Real-time spot pricing, technical momentum, and forward Wall Street consensus targets.
+   - **Deep Agents Quant Sandbox**: Safe execution of 5,000-path Monte Carlo price paths and Markowitz mean-variance optimization.
+3. **Parallel Swarm Convergence**:
+   - 13 specialized analytical lenses analyze data simultaneously and commit structured findings, severity badges, and ground-truth proof citations back to the run blackboard.
 
 ---
 
