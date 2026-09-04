@@ -109,6 +109,8 @@ class TopologyController {
       } else if (type === "mcp") {
         const mode = localStorage.getItem("agentsphere_mcp_mode") || "harry_potter";
         dsl = await api.request(`${CONFIG.ENDPOINTS.MCP_MERMAID}?mode=${mode}`, { includeAuth: false });
+      } else if (type === "stock") {
+        dsl = await api.request(CONFIG.ENDPOINTS.STOCK_MERMAID, { includeAuth: false });
       } else if (type === "sql") {
         dsl = `flowchart TD
     Start([User Natural Language Query]) --> SQLAgent[1. create_sql_agent\\nSQLDatabaseToolkit Orchestrator]

@@ -16,6 +16,7 @@ from app.core.observability import flush_langfuse, init_langfuse
 from app.graphs.builder import create_graph, GraphBuilder
 from app.graphs.research.builder import ResearchGraphBuilder
 from app.graphs.mcp.builder import MCPTravelGraphBuilder
+from app.graphs.stock_analysis.builder import StockAnalysisGraphBuilder
 from app.api.v1.router import api_router
 
 # Configure structured logging
@@ -61,13 +62,20 @@ async def lifespan(app: FastAPI):
     mcp_travel_builder = MCPTravelGraphBuilder(checkpointer=app.state.checkpointer)
     app.state.mcp_travel_graph = mcp_travel_builder.build_graph()
 
-    # 8. Export Graph Visualizations
+    # 8. Build & Compile Institutional NSE Stock Analysis Graph
+    stock_builder = StockAnalysisGraphBuilder(checkpointer=app.state.checkpointer)
+    stock_builder.build()
+    app.state.stock_graph = stock_builder.compile()
+
+    # 9. Export Graph Visualizations
     os.makedirs("app/static", exist_ok=True)
     builder.save_visualization("app/static/graph.png")
     research_builder.save_visualization("app/static/research_graph.png")
     mcp_travel_builder.save_visualization("app/static/mcp_graph.png")
+    stock_builder.save_visualization("app/static/stock_analysis_graph.png")
 
     logger.info("Application initialization complete. Ready to serve requests.")
+
 
     yield
 
@@ -113,6 +121,10 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # Mount Routers
 # Direct root routes matching AgentNotes.ipynb specifications
 app.include_router(api_router)
+
+# Mount Frontend UI (served as single-page application)
+if os.path.exists("frontend"):
+    app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 
 if __name__ == "__main__":

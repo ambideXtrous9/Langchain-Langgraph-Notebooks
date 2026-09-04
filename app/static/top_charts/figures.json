@@ -1,0 +1,44 @@
+[
+  {
+    "id": "chart_roe_pe_frontier",
+    "title": "Target Peers Valuation vs Profitability: P/E vs ROE %",
+    "chart_type": "scatter",
+    "sql_query": "SELECT symbol, pe_ratio, roe_pct FROM nifty500 WHERE pe_ratio < 70 AND roe_pct > 0 AND (symbol IN ('ARE&M', 'BAJAJ-AUTO', 'CIEINDIA', 'CRAFTSMAN') OR industry IN (SELECT industry FROM nifty500 WHERE symbol IN ('ARE&M', 'BAJAJ-AUTO', 'CIEINDIA', 'CRAFTSMAN'))) ORDER BY market_cap_cr DESC LIMIT 20",
+    "x_col": "pe_ratio",
+    "y_col": "roe_pct",
+    "critic_verdict": "approved",
+    "critic_notes": "Chart approved by Chart Critic.",
+    "data_count": 20,
+    "file_path": "app/static/top_charts/chart_roe_pe_frontier.png",
+    "curator_score": 35.0,
+    "curator_rank": 1
+  },
+  {
+    "id": "chart_target_valuation",
+    "title": "Head-to-Head Valuation (P/E Ratio): ARE&M vs BAJAJ-AUTO vs CIEINDIA vs CRAFTSMAN",
+    "chart_type": "bar",
+    "sql_query": "SELECT symbol, pe_ratio FROM nifty500 WHERE symbol IN ('ARE&M', 'BAJAJ-AUTO', 'CIEINDIA', 'CRAFTSMAN')",
+    "x_col": "symbol",
+    "y_col": "pe_ratio",
+    "critic_verdict": "approved",
+    "critic_notes": "Chart approved by Chart Critic.",
+    "data_count": 4,
+    "file_path": "app/static/top_charts/chart_target_valuation.png",
+    "curator_score": 16.0,
+    "curator_rank": 2
+  },
+  {
+    "id": "chart_target_returns",
+    "title": "Head-to-Head Momentum Returns (%): ARE&M vs BAJAJ-AUTO vs CIEINDIA vs CRAFTSMAN",
+    "chart_type": "bar",
+    "sql_query": "SELECT symbol, return_6m_pct FROM nifty500 WHERE symbol IN ('ARE&M', 'BAJAJ-AUTO', 'CIEINDIA', 'CRAFTSMAN')",
+    "x_col": "symbol",
+    "y_col": "return_6m_pct",
+    "critic_verdict": "approved",
+    "critic_notes": "Chart approved by Chart Critic.",
+    "data_count": 4,
+    "file_path": "app/static/top_charts/chart_target_returns.png",
+    "curator_score": 11.0,
+    "curator_rank": 3
+  }
+]

@@ -2,7 +2,7 @@
 
 import logging
 from typing import Callable, List, Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from app.core.auth_database import auth_db_manager
 from app.core.security import decode_token
@@ -17,10 +17,8 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-) -> UserResponse:
-    """Decodes JWT Bearer token, checks token revocation, and fetches user profile."""
+async def validate_token_and_get_user(token: str) -> UserResponse:
+    """Validates token authenticity, blacklist revocation, and active user profile."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials.",
@@ -70,6 +68,41 @@ async def get_current_user(
         role=user_dict.get("role", "user"),
         created_at=user_dict.get("created_at"),
     )
+
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+) -> UserResponse:
+    """Decodes JWT Bearer token, checks token revocation, and fetches user profile."""
+    return await validate_token_and_get_user(token)
+
+
+async def get_report_user(
+    request: Request,
+    token: Optional[str] = Query(None, description="JWT token for report access via query param"),
+) -> UserResponse:
+    """Authenticates HTML report viewer via either Authorization header or ?token= query parameter."""
+    auth_header = request.headers.get("Authorization")
+    raw_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        raw_token = auth_header.split(" ", 1)[1].strip()
+    elif token:
+        raw_token = token.strip()
+
+    if not raw_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to view research report. Provide Bearer token or ?token= query parameter.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = await validate_token_and_get_user(raw_token)
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is deactivated.",
+        )
+    return user
 
 
 async def get_current_active_user(

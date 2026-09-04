@@ -8,7 +8,7 @@
 [![uv](https://img.shields.io/badge/Package%20Manager-uv-blueviolet.svg)](https://astral.sh/uv)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A reference implementation and production-grade boilerplate for building robust, observable, and stateful AI agent applications with **LangGraph**, **FastAPI**, **OAuth2 Multi-DB Authentication & Blacklisting**, **Agent Middleware Suite (PII, Rate Limiting, HITL, Summarization)**, **Per-Agent Token Budgeting**, **Parallel Multi-Critic Research (`defer=True`)**, **PostgreSQL Checkpointing (`AsyncPostgresSaver`)**, **Langfuse Tracing**, **Server-Sent Events (SSE)**, and **WebSocket Streaming**.
+A reference implementation and production-grade boilerplate for building robust, observable, and stateful AI agent applications with **LangGraph**, **FastAPI**, **OAuth2 Multi-DB Authentication & Blacklisting**, **Agent Middleware Suite (PII, Rate Limiting, HITL, Summarization)**, **Per-Agent Token Budgeting**, **Parallel Multi-Critic Research (`defer=True`)**, **Institutional NSE Stock Analysis Swarm (13 Lenses, DuckDB Fact Store, Pinecone MCP, Yahoo Finance & LangChain Deep Agents Sandboxes)**, **Isolated Quant Financial Modeling (5,000-Path Monte Carlo & Markowitz Optimization)**, **PostgreSQL Checkpointing (`AsyncPostgresSaver`)**, **Langfuse Tracing**, **Server-Sent Events (SSE)**, and **WebSocket Streaming**.
 
 ---
 
@@ -25,6 +25,14 @@ A reference implementation and production-grade boilerplate for building robust,
     - [F. Comprehensive Execution Path & Technical Component Matrix](#f-comprehensive-execution-path--technical-component-matrix)
     - [G. Technology Stack, Specific Packages & Architectural Roles](#g-technology-stack-specific-packages--architectural-roles)
   - [2. Workflow Graphs](#2-workflow-graphs)
+    - [A. Policy Decision-Tree Graph](#a-policy-decision-tree-graph-stateful-human-in-the-loop)
+    - [B. Parallel Multi-Critic Research Graph](#b-parallel-multi-critic-research-graph-defer--true-join)
+    - [C. Model Context Protocol (MCP) Multi-Agent Intelligence Graphs](#c-model-context-protocol-mcp-multi-agent-intelligence-graphs)
+    - [D. Text-to-SQL Analyst Architecture Graph](#d-text-to-sql-analyst-architecture-graph-sqldatabasetoolkit)
+    - [F. Institutional NSE Stock Analysis Swarm Architecture](#f-institutional-nse-stock-analysis-swarm-architecture-deepagents--duckdb--pinecone-mcp--yahoo-finance--gnews)
+    - [G. Master Deep Agent Query Planning & Multi-Store Ingestion Architecture](#g-master-deep-agent-query-planning--multi-store-ingestion-architecture)
+    - [H. Institutional Surveillance Dossier & Visual Report Pipeline](#h-institutional-surveillance-dossier--visual-report-pipeline)
+    - [I. LangChain Deep Agents Sandboxes Architecture & Quant Modeling](#i-langchain-deep-agents-sandboxes-architecture-appcoresandbox)
 - [Core Mechanisms & Design Patterns](#-core-mechanisms--design-patterns)
 - [Project Directory Structure](#-project-directory-structure)
 - [API Endpoints Specification](#-api-endpoints-specification)
@@ -75,7 +83,7 @@ flowchart TD
     subgraph Gateway ["🚪 FastAPI Gateway & Reverse Proxy (Port 8000) [Uvicorn 0.52.4 + uvloop + httptools]"]
         CORS["CORSMiddleware (fastapi.middleware.cors)\nConfig: settings.CORS_ORIGINS\nCredentials: True, Methods: *, Headers: *"]
         ExcHandler["Global Exception Handlers (app/core/exceptions.py)\nHandles: RequestValidationError, HTTPException,\nRateLimitExceededException, 500 Fallback"]
-        Router["API v1 Router Aggregator (app/api/v1/router.py)\nPrefix mounts: /auth, /interact, /research, /mcp, /chat, /sql, /ws"]
+        Router["API v1 Router Aggregator (app/api/v1/router.py)\nPrefix mounts: /auth, /interact, /research, /mcp, /chat, /sql, /ws, /stock"]
     end
 
     Client -->|HTTP REST / SSE / WebSocket| CORS
@@ -95,7 +103,7 @@ flowchart TD
         JWTDecode["2. decode_token(token)\n• Pkg: pyjwt==2.13.0\n• Signature: HS256 with settings.JWT_SECRET_KEY\n• Verifies: exp > utcnow (checks ExpiredSignatureError)"]
         JTIBlacklist["3. is_token_blacklisted(jti)\n• Driver: psycopg==3.3.4 (AsyncConnectionPool)\n• Query: SELECT 1 FROM token_blacklist WHERE token_jti = %s\n• Rejection: 401 Unauthorized ('Token has been revoked')"]
         UserLookup["4. get_user_by_email(email)\n• Driver: psycopg==3.3.4 (dict_row factory)\n• Query: SELECT ... FROM users WHERE email = %s\n• Resolves: Database User Entity"]
-        ActiveCheck["5. get_current_active_user\n• Dependency: Depends(get_current_user)\n• Asserts: user.is_active == True\n• Rejection: 403 Forbidden ('User account is deactivated')"]
+        ActiveCheck["5. get_current_active_user / get_report_user\n• Dependency: Depends(get_current_user)\n• Asserts: user.is_active == True\n• Rejection: 403 Forbidden ('User account is deactivated')"]
         RoleCheck["6. require_role(*allowed_roles)\n• Dependency Factory: Closure returning role_checker\n• Asserts: current_user.role in allowed_roles\n• Bypass: is_superuser == True"]
     end
 
@@ -110,6 +118,7 @@ flowchart TD
         PIISanitize["PIIMiddleware\n• Pkg: re (regex) + Luhn Algorithm\n• Detection: SSN, Credit Card, Email, Phone, PHI\n• Sanitization: Masking / Redaction before LLM"]
         HITLInterception["HumanInTheLoopMiddleware\n• Pkg: langgraph.types.interrupt\n• Intercept: Mutating / compliance tool calls\n• Pauses: Awaits human Command(resume=...)"]
         Summarizer["SummarizationMiddleware\n• Pkg: tiktoken==0.14.0 BPE counter\n• Trigger: 1200 tokens / 8 messages\n• Compression: Recursive summary of older turns"]
+        StockMiddlewares["Stock Middleware Suite\n• StockThrottle, Telemetry,\nSelfCritique, ContextEditing"]
     end
 
     subgraph GuardedEndpoints ["⚡ Protected Agent Services (Guarded Endpoints)"]
@@ -119,6 +128,7 @@ flowchart TD
         ChatEp["POST /generic_chat\n• Guard: Depends(get_current_active_user)\n• Pkg: langchain-postgres==0.0.17\n• Memory: PostgresChatMessageHistory (agent_db)\n• LLM: ChatGroq (openai/gpt-oss-120b)"]
         SQLEp["POST /get_sql_query\n• Guard: Depends(get_current_active_user)\n• Pkg: SQLDatabaseToolkit (langchain_community)\n• Safety: sql_db_query_checker + read-only execution"]
         WSEp["WS /ws/interact\n• Protocol: FastAPI WebSocket\n• Auth: query_params['token'] pre-accept verify\n• Rejection: close(code=WS_1008_POLICY_VIOLATION)\n• Streaming: Full-duplex JSON frames"]
+        StockEp["POST /stock/analyze & /stock/report/{run_id}\nPOST /stock/sandbox/* & /stock/quant/simulate\n• Guard: Depends(get_current_active_user) / get_report_user\n• Swarm: 15-node StateGraph (DuckDB, Pinecone, YFinance, GNews)\n• Quant: Isolated Deep Agents Sandboxes (Monte Carlo & Markowitz)"]
     end
 
     subgraph ExecutionEngines ["🧠 Execution Engines, Toolkits & Observability"]
@@ -126,6 +136,8 @@ flowchart TD
         LangGraphResearch["LangGraph Research Pipeline\n(Planner, Approver, Synthesizer, Fact/Style Critics, Publisher)"]
         MCPManager["MCPClientManager (langchain-mcp-adapters==0.3.1)\n(stdio pipes to Node.js MCP worker processes)"]
         SQLToolkit["SQLDatabaseToolkit\n(Safe Schema Introspection, Dialect Checker, Read-only Query)"]
+        LangGraphStock["Institutional Stock Swarm Engine\n(Master Deep Agent Planner, 13 Lenses, 4-Tier Verification, Chart Critic)"]
+        QuantSandbox["Deep Agents Quant Sandbox\n(Subprocess/Docker isolation, 512MB limit, GBM & Markowitz)"]
         LangfuseTrace["Langfuse Observability (langfuse==4.14.4)\nCallbackHandler attached to RunnableConfig(user_id, email, thread_id)"]
     end
 
@@ -158,6 +170,8 @@ flowchart TD
     SQLEp <-->|Read-Only Inspection & SELECT| AgentDB
     ResearchEp --> LangGraphResearch
     MCPEp --> MCPManager
+    StockEp --> LangGraphStock
+    StockEp --> QuantSandbox
 ```
 
 ---
@@ -500,11 +514,28 @@ Every stage of the authentication, authorization, database persistence, and agen
 - **`duckduckgo-search` (`duckduckgo-search==8.1.1`)**:
   - Real-time zero-configuration live search engine integration for researcher dispatchers.
 
+##### 6. Institutional Stock Market Analysis & Quantitative Engine Layer
+- **`deepagents` (`deepagents==0.7.13`)**:
+  - LangChain deep agent framework powering 13 specialized analyst lenses with autonomous reasoning, tool execution, and middleware integration.
+- **`duckdb` (`duckdb==1.5.0`)**:
+  - High-performance embedded columnar analytical database providing in-memory SQL querying, aggregate sector statistics, and sub-millisecond scalar proof verification for the Numeric Tracer.
+- **`yfinance` (`yfinance==1.7.0`)**:
+  - Official PyPI package by Ran Aroussi implementing real-time quotes, multi-period historical prices, valuation ratios, consensus price targets, peer comparisons, and live corporate news.
+- **`gnews` (`gnews==0.4.5`)**:
+  - Real-time Indian financial media and stock market news retrieval engine providing sentiment context and source quotes for qualitative audit.
+- **`matplotlib` (`matplotlib==3.10.8`)**:
+  - High-resolution publication chart generation in headless mode (`Agg` backend) generating visual exhibits reviewed and scored by the Chart Critic and Curator.
+
 ---
 
 ### 2. Workflow Graphs
 
 #### A. Policy Decision-Tree Graph (Stateful Human-in-the-Loop)
+
+<p align="center">
+  <img src="./assets/policy_graph.png" alt="Policy Decision-Tree StateGraph" width="550"/>
+</p>
+
 ```mermaid
 flowchart TD
     Start([User Request]) --> UserInitPath[1. user_initpath\nExtract User Decision & Path]
@@ -522,6 +553,11 @@ flowchart TD
 ```
 
 #### B. Parallel Multi-Critic Research Graph (`defer = True` Join)
+
+<p align="center">
+  <img src="./assets/research_graph.png" alt="Parallel Multi-Critic Research Graph" width="600"/>
+</p>
+
 ```mermaid
 ---
 config:
@@ -566,6 +602,11 @@ graph TD;
 #### C. Model Context Protocol (MCP) Multi-Agent Intelligence Graphs
 
 ##### Mode 1: ⚡ Multi-Hop Harry Potter Lore QA Graph (`@pinecone-database/mcp`)
+
+<p align="center">
+  <img src="./assets/mcp_graph_hp.png" alt="Multi-Hop Harry Potter Lore QA Graph" width="450"/>
+</p>
+
 ```mermaid
 flowchart TD
     Start([User Harry Potter Complex Question]) --> HPSearchAgent[1. hpSearchAgent\nMulti-Hop ReAct Agent\nPinecone MCP Index: hpvdb-openai\nTools: search-records, list-indexes,\ndescribe-index-stats, rerank-documents,\ncascading-search, search-docs]
@@ -576,6 +617,11 @@ flowchart TD
 ```
 
 ##### Mode 2: 🏨 Airbnb Travel & Lodging Graph (`@openbnb/mcp-server-airbnb` + WeatherAPI)
+
+<p align="center">
+  <img src="./assets/mcp_graph_airbnb.png" alt="Airbnb Travel & Lodging Graph" width="500"/>
+</p>
+
 ```mermaid
 flowchart TD
     Start([User Travel Query]) --> AirbnbAgent[1. airbnbAgent\nReAct Agent with Airbnb MCP Tools]
@@ -613,9 +659,278 @@ flowchart TD
     classDef default fill:#f2f0ff,line-height:1.2
 ```
 
+#### F. Institutional NSE Stock Analysis Swarm Architecture (`deepagents` + DuckDB + Pinecone MCP + Yahoo Finance + GNews)
+
+<p align="center">
+  <img src="./assets/stock_analysis_graph.png" alt="Institutional Stock Analysis Swarm StateGraph" width="750"/>
+</p>
+
+```mermaid
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	deterministic_ingest(1. deterministic_ingest<br/><small><em>NIFTY 500 CSV -> DuckDB & Pinecone MCP</em></small>)
+	richness_assessor(2. richness_assessor<br/><small><em>Data Completeness & Lens Gating</em></small>)
+	planner(3. planner<br/><small><em>Master Deep Agent Strategy & Subgoals</em></small>)
+	analyst_fanout(4. analyst_fanout<br/><small><em>13 Deep Agent Lenses + Middlewares</em></small>)
+	reflection(5. reflection<br/><small><em>Coverage & Gap Evaluation</em></small>)
+	followup_analysis(6. followup_analysis<br/><small><em>Targeted Gap Funding</em></small>)
+	gather(7. gather<br/><small><em>SQLite Blackboard Synchronization</em></small>)
+	verify(8. verify<br/><small><em>4-Tier Numeric, Quote, Digit & Skeptic Audit</em></small>)
+	judge(9. judge<br/><small><em>Deduplication, Ranking & Headlines</em></small>)
+	narrative_enrich(10. narrative_enrich<br/><small><em>Pinecone MCP Vector Context (No LLM)</em></small>)
+	chart_agent(11a. chart_agent<br/><small><em>Matplotlib Realized Plots + Chart Critic</em></small>)
+	section_writers(11b. section_writers<br/><small><em>7 Spine Section Writers</em></small>)
+	exec_summary(11c. exec_summary<br/><small><em>CIO Actionable Briefing</em></small>)
+	assembler(12. assembler<hr/><small><em>defer = True</em></small>)
+	chart_curator(13. chart_curator<br/><small><em>Top Exhibits & figures.json</em></small>)
+	__end__([<p>__end__</p>]):::last
+
+	__start__ --> deterministic_ingest;
+	deterministic_ingest --> richness_assessor;
+	richness_assessor --> planner;
+	planner --> analyst_fanout;
+	analyst_fanout --> reflection;
+	reflection -. &nbsp;followup&nbsp; .-> followup_analysis;
+	reflection -.-> gather;
+	followup_analysis --> gather;
+	gather -.-> verify;
+	gather -.-> judge;
+	verify --> judge;
+	judge --> narrative_enrich;
+	
+	%% Parallel Synthesis Join (defer = True)
+	narrative_enrich --> chart_agent;
+	narrative_enrich --> section_writers;
+	narrative_enrich --> exec_summary;
+	
+	chart_agent --> assembler;
+	section_writers --> assembler;
+	exec_summary --> assembler;
+	
+	assembler --> chart_curator;
+	chart_curator --> __end__;
+
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
+```
+
+##### 15-Node Quantitative Pipeline Architecture:
+1. **`deterministic_ingest`**: Fetches official NIFTY 500 CSV from NSE (`niftyindices.com`), ingests 500 equities into an embedded **DuckDB Fact Store**, retrieves Indian stock market headlines via **GNews**, generates semantic vector embeddings into **Pinecone MCP**, and enforces an **Empty Guard** fail-fast.
+2. **`richness_assessor`**: Programmatically computes field completeness, sector distribution, and record counts to dynamically gate the 13 analyst lenses.
+3. **`planner`**: Evaluates data profile and initializes **SQLite Blackboard Memory** (`data/blackboard_{run_id}.db`) with subgoals, lens-specific briefs, priority ordering, and analytical traps.
+4. **`analyst_fanout` (13 Lenses with Deep Agents + Isolated Sandboxes)**: Concurrently runs deep agents (`create_deep_agent` from LangChain) equipped with:
+   - **4 Custom Agent Middlewares**: `StockThrottleMiddleware`, `StockTelemetryMiddleware`, `StockSelfCritiqueMiddleware`, `StockContextEditingMiddleware`.
+   - **Isolated Sandbox Backend (`backend=get_sandbox_backend()`)**: Enforces the **Sandbox-as-Tool** pattern where untrusted Python math & algorithmic scripts execute within a sanitized environment (stripped of host credentials/API keys, capped at 512MB RAM and 1 CPU).
+   - **Quantitative Modeling Tools**: 5,000-path Monte Carlo Geometric Brownian Motion simulations, Value at Risk (VaR 95% & 99%), Expected Shortfall (CVaR), and Markowitz Mean-Variance Portfolio Optimization.
+   - **Tools Suite**: DuckDB analytical SQL execution, GNews intelligence, Pinecone MCP vector search, and 7 Yahoo Finance (`yfinance`) tools (`fetch_stock_quote_yf`, `fetch_stock_historical_yf`, `fetch_stock_fundamentals_yf`, `fetch_analyst_targets_yf`, `fetch_stock_news_yf`, `download_multi_stock_comparison_yf`, `search_ticker_yf`).
+5. **`reflection`**: Evaluates subgoal coverage across lenses to detect gaps or unaddressed risk factors.
+6. **`followup_analysis` / `gather`**: Dispatches targeted follow-up queries if the reflection gap is funded, then gathers all candidate findings into SQLite Blackboard Memory.
+7. **`verify` (4-Tier Verification Suite)**:
+   - **Numeric Tracer**: Re-executes claimed SQL against DuckDB and verifies a single scalar match within tolerance.
+   - **Quote Audit**: Verifies exact verbatim substring matches against company announcements/news.
+   - **Digit Audit**: Ensures every prose number is traced back to verified data or exempt sets.
+   - **Skeptic Quorum**: Evaluates candidate findings against named analytical flaws.
+8. **`judge`**: Deduplicates findings, ranks by confidence, and writes authoritative headlines using Finding IDs only.
+9. **`narrative_enrich`**: Enriches verified claims using Pinecone MCP vector search without consuming LLM tokens.
+10. **Parallel Synthesis Join (`defer=True`)**:
+    - **`chart_agent` & `chart_critic`**: Generates Matplotlib visualizations and critiques data sufficiency (drops zero-row/zero-variance figures).
+    - **`section_writers`**: 7 specialized section writers (*Valuation multiples, Operational efficiency, Momentum, Structural shifts, Policy/governance, Behavioral sentiment, Systemic risks*).
+    - **`exec_summary`**: CIO-level executive briefing.
+11. **`assembler`**: Resolves citation tokens and compiles a publication-grade HTML research dossier featuring embedded Quantitative Sandbox modeling exhibits.
+12. **`chart_curator`**: Scores and curates top exhibits into `figures.json` and outputs final assets.
+
 ---
 
-## ⚙️ Core Mechanisms & Design Patterns
+#### G. Master Deep Agent Query Planning & Multi-Store Ingestion Architecture
+
+The stock swarm features an autonomous **Master Deep Agent Planning & Strategic Ingestion Subsystem** (`planner_node` & `StockQueryReasoner`). Rather than executing rigid hard-coded workflows, natural language user prompts (e.g. *"research on HDFC Bank in depth"* or *"compare HDFC Bank and Reliance performance for next 6 months"*) are dynamically parsed, decomposed, and routed across five segregated data tiers:
+
+```mermaid
+flowchart TD
+    UserQuery(["💬 User Natural Language Query\n'compare HDFC Bank and Reliance performance for next 6 months'\n'research on HDFC Bank in depth'"])
+    
+    subgraph DeepPlanner ["🧠 Master Deep Agent Planning Subsystem (app/graphs/stock_analysis/nodes.py)"]
+        Reasoner["StockQueryReasoner (app/tools/stock_query_reasoner.py)\n• Entity & Alias Disambiguation (HDFC Bank -> HDFCBANK, Reliance -> RELIANCE)\n• Analysis Mode Selection: single_stock | comparison | sector\n• Horizon Mapping: 6 Months -> 126 Trading Days, 1 Year -> 252 Trading Days"]
+        ThesisGen["Master Strategic Thesis & Execution Plan Generator\n• Formulates Phase 1-5 Milestone Roadmap\n• Establishes Prioritized Subgoals (SG_VAL, SG_MOM, SG_RISK, SG_QUANT)\n• Identifies & Gates Cognitive Valuation Traps"]
+        BlackboardInit["SQLite Blackboard Run Memory (data/blackboard_{run_id}.db)\n• Ingestion of Target Tickers, Subgoals, and Lens Briefs"]
+    end
+
+    UserQuery --> Reasoner
+    Reasoner --> ThesisGen
+    ThesisGen --> BlackboardInit
+
+    subgraph MultiStore ["📚 Coordinated Multi-Store Heterogeneous Data Tier"]
+        CSVStore[("1. CSV Directory (data/nifty500.csv)\n• Official NSE NIFTY 500 constituents\n• ISIN, Sector, Industry mapping")]
+        DuckDBStore[("2. DuckDB In-Memory Analytical Fact Store\n• Ultra-fast columnar SQL fact store\n• Multiples (P/E, P/B), ROCE, ROE, 1M/6M/1Y Momentum\n• Ground truth proof verification engine")]
+        GNewsStore[("3. GNews Real-Time Media Intelligence\n• Live Indian financial press headlines\n• Sentiment tracking & corporate disclosures")]
+        YFStore[("4. Yahoo Finance PyPI Suite (7 Deep Agent Tools)\n• Real-time spot quotes & bid/ask spreads\n• Multi-stock comparative price histories\n• Forward analyst targets & upside consensus")]
+        QuantSandboxStore[("5. Deep Agents Quant Sandbox\n• Isolated Subprocess / Docker runtime (512MB RAM)\n• 5,000-Path Monte Carlo GBM forward price projection\n• Markowitz Mean-Variance Max Sharpe portfolio optimization")]
+    end
+
+    BlackboardInit --> CSVStore
+    BlackboardInit --> DuckDBStore
+    BlackboardInit --> GNewsStore
+    BlackboardInit --> YFStore
+    BlackboardInit --> QuantSandboxStore
+
+    subgraph SwarmLenses ["⚡ Parallel Deep Analyst Swarm (analyst_fanout_node)"]
+        L1["Effectiveness Lens (Valuation & Multiples)"]
+        L2["Temporal Lens (Momentum & 126d Monte Carlo)"]
+        L3["Harm Attribution (Leverage & Debt Audit)"]
+        L4["Discovery Lens (Institutional Holdings & FII)"]
+        L5["Systemic Risk Lens (Beta & Sector Exposure)"]
+        L6["Portfolio Optimization (Markowitz Max Sharpe)"]
+        LRest["Remaining 7 Specialized Analytical Lenses..."]
+    end
+
+    CSVStore --> SwarmLenses
+    DuckDBStore --> SwarmLenses
+    GNewsStore --> SwarmLenses
+    YFStore --> SwarmLenses
+    QuantSandboxStore --> SwarmLenses
+    SwarmLenses <-->|Bidirectional candidate findings & SQL proofs| BlackboardInit
+```
+
+---
+
+#### H. Institutional Surveillance Dossier & Visual Report Pipeline
+
+The generated publication research report is styled as an **Institutional Equity Surveillance Dossier** modeled directly on high-stakes institutional forensics (matching the 51-page Swiss editorial template: *Hidden recall risk — Boston Scientific Pacemaker (LWP)*).
+
+```mermaid
+flowchart TD
+    subgraph AssemblyPipeline ["📑 Institutional Dossier Compilation Pipeline (assembler_node & chart_curator_node)"]
+        P1["📄 Page 1: Cover Page\n• Burgundy Confidentiality Pill Tag\n• Dossier Title & Subtitle\n• Verified Provenance Notice (DuckDB, GNews, YF)\n• Soft Rose Thesis Box (#fff1f2 / 4px #8b1528 border)\n• Summary Statistics & Accent Rule"]
+        P2["📄 Page 2: Table of Contents\n• Clean 7-Part Numbered Analytical Index\n• Page-break rules for printing"]
+        S1["1. Executive Summary\n• Prose synthesis (zero unicode citation artifacts)\n• Bullet findings with severity tags (Critical / High)"]
+        S2["2. Master Deep Agent Strategic Plan\n• Strategic Thesis Callout\n• Phased Execution Roadmap & Prioritized Subgoals\n• Cognitive & Valuation Traps Gated"]
+        S3["3. Head-to-Head Comparative Scorecard\n• Deep Burgundy Header (#8b1528) with White Text\n• MCap, P/E, P/B, ROE%, ROCE%, D/E, Beta, 6M Ret%"]
+        S4["4. Verified Analytical Findings Cards\n• Severity Badges: CRITICAL / HIGH / MEDIUM\n• Soft Rose Problem Statement Box\n• 4 Subsections: Evidence, Driver, Risk, Recommendation"]
+        S5["5. Deterministic Spine Sections\n• 7 Analytical Pillars (5.1 to 5.7)"]
+        S6["6. Curated Exhibits & Figures\n• Deep Burgundy Bar Palette (#8b1528)\n• Top/Right Spines Removed, Horizontal-Only Gridlines\n• Figure X. [Title] Captions & Critic Approval Tags"]
+        S7["7. Quantitative Sandbox Modeling\n• Isolated DeepAgent Sandbox Execution Profile\n• Formatted Monte Carlo & Markowitz Telemetry JSON"]
+        Colophon["📜 Page 51: Colophon & Governance Notice\n• Strict Verification Notice & Legal Compliance Disclaimer"]
+    end
+
+    P1 --> P2 --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> Colophon
+```
+
+##### Visual Exhibit Demonstrations:
+
+The charting engine generates publication-grade Matplotlib visual exhibits matching the burgundy institutional color palette:
+
+<p align="center">
+  <img src="./assets/chart_sector_mcap.png" alt="NIFTY 500 Sector Capitalization" width="700"/>
+</p>
+
+<p align="center">
+  <img src="./assets/chart_target_valuation.png" alt="Head-to-Head Valuation Multiples" width="700"/>
+</p>
+
+<p align="center">
+  <img src="./assets/chart_roe_pe_frontier.png" alt="Valuation vs Profitability Frontier" width="700"/>
+</p>
+
+---
+
+#### I. LangChain Deep Agents Sandboxes Architecture (`app/core/sandbox/`)
+
+This platform adheres strictly to the official [LangChain Deep Agents Sandboxes specification](https://docs.langchain.com/oss/python/deepagents/sandboxes) to safely run untrusted quantitative financial algorithms, Monte Carlo paths, and algorithmic scripts.
+
+```mermaid
+flowchart TD
+    subgraph HostPlane ["🖥️ Host Application Plane (FastAPI & LangGraph Orchestration)"]
+        User["Client / Browser / CLI"]
+        LLM["Deep Agents Orchestrator\n(ChatGroq / LangChain create_deep_agent)"]
+        Blackboard["SQLite Blackboard Run Memory\n(data/blackboard_{run_id}.db)"]
+        Secrets["Host Secrets & Environment\n(OPENAI_API_KEY, PINECONE_API_KEY, DATABASE_URL)"]
+    end
+
+    subgraph SecurityFilter ["🛡️ Security Sanitization & Isolation Barrier"]
+        EnvStrip["Environment Stripper\n(Whitelists ONLY PATH & TMPDIR;\nPurges all API keys, tokens & connection strings)"]
+        PathGuard["Path Guard & Boundary Validator\n(Prevents directory traversal outside sandbox)"]
+        ResourceGuard["Resource Watchdog\n(Enforces 512MB RAM ceiling, 1.0 CPU, 30s timeout)"]
+    end
+
+    subgraph SandboxPlane ["⚡ Isolated Sandbox Execution Plane (SandboxBackendProtocol)"]
+        direction TB
+        subgraph Providers ["Pluggable Backend Providers (app/core/sandbox/)"]
+            Subproc["IsolatedSubprocessSandbox\n(Zero-dependency, ephemeral workspace)"]
+            Docker["DockerSandbox\n(--memory=512m --cpus=1.0 --network=none)"]
+            Cloud["LangSmithSandbox\n(Remote cloud sandbox integration)"]
+        end
+        
+        subgraph QuantTools ["Quantitative Financial Modeling Tools (app/tools/quant_models.py)"]
+            MC["Monte Carlo Price Simulator\n(5,000-Path GBM, VaR 95/99%, CVaR)"]
+            Markowitz["Markowitz Portfolio Optimizer\n(10,000 allocations, Max Sharpe weights)"]
+            CustomPy["Custom Python Executor\n(NumPy / SciPy algorithmic backtesting)"]
+        end
+    end
+
+    User -->|REST / Chat Stream| LLM
+    LLM -->|Read / Write Findings| Blackboard
+    LLM -->|Dispatches Untrusted Math Code| SecurityFilter
+    Secrets -.->|BLOCK: Never passed to sandbox| SecurityFilter
+    
+    SecurityFilter --> Providers
+    Providers --> QuantTools
+    QuantTools -->|Structured JSON & Terminal Output| LLM
+```
+
+##### 1. The "Sandbox-as-Tool" Pattern
+Rather than running the entire agent loop inside an untrusted sandbox (which introduces severe risks of prompt injection dumping API keys and database credentials), we implement the **Sandbox-as-Tool** architecture:
+* **Host / Application Plane**: The LLM orchestration, checkpointing, and graph routing run securely on the host/backend.
+* **Sandbox Execution Plane**: Dispatched code and mathematical simulations run inside an isolated, resource-constrained environment implementing `SandboxBackendProtocol`.
+* **Zero Credential Leakage**: Sensitive environment variables (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `DATABASE_URL`, `JWT_SECRET_KEY`) are stripped before subprocess or container execution.
+
+| Dimension | Host / Direct Execution | Agent-in-Sandbox | **Sandbox-as-Tool (Our Architecture)** |
+|:---|:---|:---|:---|
+| **API Keys & Secrets** | Vulnerable to shell `env` inspection | Exposed to prompt injection in sandbox | 🔒 **100% Isolated outside sandbox** |
+| **Database & File Safety** | Direct access to Postgres/DuckDB | Full access to sandbox filesystem | 🛡️ **Guarded ephemeral filesystem & boundary checks** |
+| **Resource Constraints** | Can hang host / exhaust memory | Bound to VM/container | ⚡ **Strict 512MB RAM ceiling, 1.0 CPU, 30s timeout** |
+| **Quant Computation** | Insecure | High orchestration overhead | 🚀 **Fast, dynamic NumPy/SciPy execution** |
+
+##### 2. Protocol Compliance & Dual-Plane File Access
+Adheres 1:1 with LangChain Deep Agents `SandboxBackendProtocol`:
+* **External File Operations**:
+  - `upload_files(files)`: Stages datasets and historical prices from host into sandbox.
+  - `download_files(paths)`: Extracts generated chart figures and simulation artifacts.
+* **Internal Agent Tool Operations**:
+  - Automatically provisions agents with native filesystem tools: `read_file`, `write_file`, `edit_file`, `ls`, `grep`, `glob`, and `delete`.
+
+##### 3. Pluggable Sandbox Providers (`app/core/sandbox/`)
+* **`IsolatedSubprocessSandbox`**: Zero-dependency, secure local execution engine with environment sanitization, ephemeral working directories, and POSIX timeout enforcement (exit code `124`).
+* **`DockerSandbox`**: Containerized execution with hardware ceilings (`--memory=512m`, `--cpus=1.0`, `--network=none`), non-root execution, and auto-fallback to subprocess.
+* **`SandboxFactory`**: Dynamic factory auto-detecting runtime capabilities and instantiating the optimal provider (`provider="auto"`).
+
+##### 4. Quantitative Financial Modeling Suite (`app/tools/quant_models.py`)
+Executed strictly inside the isolated sandbox:
+1. **5,000-Path Monte Carlo Geometric Brownian Motion (GBM)**:
+   - Projects 252 trading-day price paths using \(S_t = S_0 \exp\left((\mu - \frac{1}{2}\sigma^2)t + \sigma \sqrt{t} Z\right)\).
+   - Computes 95% and 99% Value at Risk (VaR), Conditional VaR / Expected Shortfall (CVaR), loss probability, and percentiles (P5, P50, P95).
+2. **Markowitz Mean-Variance Portfolio Optimization**:
+   - Generates 10,000 random portfolio weight allocations across specified NIFTY equities using NumPy.
+   - Calculates the **Maximum Sharpe Ratio** optimal portfolio and the **Minimum Volatility** portfolio.
+3. **Custom Python Sandbox Execution**:
+   - Allows users and deep agents to execute arbitrary Python code safely with timeout guards and stdout/stderr capture.
+
+##### 5. Frontend Quant Sandbox Console Modal
+* **Main Navigation Launch Button (`#btn-open-sandbox`)**: Located prominently in the top header navbar.
+* **Real-Time Telemetry Badge**: Polled from `GET /stock/sandbox/status` displaying isolated status, provider, and memory limits (`🟢 ISOLATED (512MB limit, 1.0 CPU)`).
+* **One-Click Quick Simulators**:
+  - **Monte Carlo Simulator**: Symbol input (`RELIANCE.NS`), volatility slider (`22%`), and execute button (`#btn-quick-run-mc`).
+  - **Markowitz Portfolio Optimizer**: Multi-symbol input (`RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ITC.NS`) and execute button (`#btn-quick-run-opt`).
+* **Interactive Code Editor & Terminal**:
+  - Code textarea with presets (GBM, Markowitz, Custom math).
+  - Monospace dark terminal console (`#modal-sandbox-output-wrap`) displaying execution duration, exit code, and stdout/stderr.
+* **Chat Stream Integration (`frontend/js/chat.js`)**:
+  - Injects violet **`⚡ DeepAgent Quant Sandbox`** cards into chat messages showcasing simulated terminal prices, 95% VaR, and optimal Sharpe weights alongside verified findings and chart exhibits.
 
 ### 1. LangGraph StateGraph & Class-Based Nodes
 - **`AgentState` TypedDict**: Manages `tree`, `user_choices`, `current_path_str`, `user_decisions_str`, `context_docs_str`, `classification`, `feedback`, `useDeviceData`, `userProvidedDeiveceData`, and `chat_history` with the `add_messages` reducer.
@@ -776,6 +1091,51 @@ Modular, extensible middleware system implementing lifecycle interception (`run_
 - **WebSocket Handshake Authentication**: Automatically appends `?token=${encodeURIComponent(token)}` to the connection URI, ensuring seamless compatibility with WebSocket JWT authorization.
 - **Schema Normalization**: Fully supports the standardized `user_provided_device_data` attribute while preserving backward compatibility with legacy `userProvidedDeiveceData` payloads.
 
+### 13. Institutional NSE Stock Analysis Swarm Mechanisms
+- **Master Deep Agent Query Planning & Plain-English Entity Resolution**:
+  - Accepts natural-language analytical prompts (e.g., *"research on HDFC Bank in depth"* or *"compare HDFC Bank and Reliance performance for next 6 months"*).
+  - The **Master Deep Agent Planner** immediately parses the objective, resolves target company aliases (e.g., *HDFC Bank* ➔ `HDFCBANK`, *Reliance* ➔ `RELIANCE`, *Tata Motors* ➔ `TATAMOTORS`), determines the analysis mode (`single_stock`, `comparison`, or `sector`), and calculates the explicit trading-day horizon (e.g., *6 months* ➔ 126 trading days, *1 year* ➔ 252 trading days).
+  - Orchestrates downstream analytical lenses to coordinate across:
+    - **CSV**: Official NIFTY 500 constituent directory (`data/nifty500.csv`) for ISIN, series, and entity mapping.
+    - **DuckDB**: Fast in-memory analytical SQL fact store for multiples (P/E, P/B), returns (1M, 6M, 1Y), ROE, ROCE, leverage (D/E), and beta.
+    - **SQLite Blackboard**: Run-level memory (`data/blackboard_{run_id}.db`) storing subgoals, target metrics, and shared audit proofs.
+    - **GNews Intelligence**: Real-time company-specific news extraction and sentiment tracking.
+    - **Yahoo Finance (`yfinance`)**: 7 live deep agent tools extracting real-time quotes, multi-stock comparative histories, and consensus analyst target upside.
+    - **Deep Agents Quant Sandbox**: Horizon-calibrated Monte Carlo forward projections and Markowitz Sharpe-maximizing portfolio allocations.
+- **Embedded DuckDB Fact Store & NIFTY 500 Enrichment**: Blazing fast in-memory analytical SQL engine ingesting 500 NSE equities from official NSE records (`data/nifty500.csv`). Tables (`nifty500`, `sector_aggregates`, `changepoint_candidates`, `quality_value_stocks`) provide instant access to P/E, P/B, ROE, ROCE, 1M/6M/1Y momentum, and market cap metrics.
+- **Pinecone MCP Vector Search & Narrative RAG**: Semantic vector retrieval across corporate disclosures and real-time news headlines using the official Pinecone MCP server, generating contextual narrative grounding without unnecessary LLM overhead.
+- **Yahoo Finance (`yfinance`) PyPI Tool Suite inside Deep Agents**: 7 high-performance tools (`fetch_stock_quote_yf`, `fetch_stock_historical_yf`, `fetch_stock_fundamentals_yf`, `fetch_analyst_targets_yf`, `fetch_stock_news_yf`, `download_multi_stock_comparison_yf`, `search_ticker_yf`) conforming to Ran Aroussi's official `yfinance` specification with DuckDB Fact Store fallback for resilience against network rate limits.
+- **LangChain `deepagents` & 4 Custom Middlewares**:
+  - `StockThrottleMiddleware`: Rate-limiting and tool call pacing.
+  - `StockTelemetryMiddleware`: Latency, model calls, and token budget tracking.
+  - `StockSelfCritiqueMiddleware`: Enforces empirical grounding, filtering speculative claims and unverified superlatives.
+  - `StockContextEditingMiddleware`: Compresses tool outputs to prevent context window exhaustion.
+- **SQLite Blackboard Memory (`data/blackboard_{run_id}.db`)**: Shared run-level persistent memory allowing analyst lenses to post candidate findings, recall peer evidence, and update verification statuses.
+- **4-Tier Quantitative Verification Suite**:
+  - **Numeric Tracer**: Re-runs claimed SQL queries against DuckDB and verifies that exactly ONE scalar matches the claimed value within a 2% tolerance.
+  - **Quote Audit**: Strict verbatim substring matching against source disclosures and GNews feed.
+  - **Digit Audit**: Scans generated prose to ensure every numeric figure maps to primary or secondary verified data (`additional_scalars`) or structural exempt sets.
+  - **Skeptic Quorum**: Evaluates candidate findings against named analytical flaws (*correlation vs causation, survivorship bias, small sample size*).
+- **Chart Agent, Critic & Curator**: Deterministic Matplotlib renderer generating charts in `app/static/top_charts/`, evaluated by a **Chart Critic** (drops zero-row/zero-variance figures) and ranked by a **Chart Curator** into `figures.json`.
+- **Deterministic Assembler & Publication HTML Report**: Resolves citation tokens and compiles a publication-grade, self-contained HTML research report at `/stock/report/{run_id}` featuring an embedded **Head-to-Head Fundamental & Valuation Scorecard** table and Quantitative Sandbox modeling exhibits.
+
+### 14. LangChain Deep Agents Sandboxes & Isolated Quant Modeling
+- **Sandbox-as-Tool Architecture**: Implements the official LangChain Deep Agents Sandboxes protocol (`SandboxBackendProtocol`) separating the host LLM orchestration plane from untrusted code execution.
+- **Strict Security Sanitization**: Strips host environment variables (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `DATABASE_URL`, `JWT_SECRET_KEY`) before sandbox execution, preventing credential leakage via malicious code or prompt injection.
+- **Resource Ceilings & Isolation**: Enforces a strict 512MB RAM ceiling, 1.0 CPU limit, and a 30-second POSIX timeout (exit code `124`) preventing denial-of-service or memory exhaustion.
+- **Dual-Plane File Operations**:
+  - *Outside Plane*: `upload_files` and `download_files` for dataset and figure synchronization.
+  - *Inside Plane*: Native filesystem tools (`read_file`, `write_file`, `edit_file`, `ls`, `grep`, `glob`, `delete`).
+- **Institutional Quant Models (`app/tools/quant_models.py`)**:
+  - *Monte Carlo Price Simulator*: 5,000-path Geometric Brownian Motion (GBM) calculating 95% & 99% Value at Risk (VaR), Conditional VaR / Expected Shortfall (CVaR), loss probability, and percentile cones.
+  - *Markowitz Portfolio Optimizer*: Generates 10,000 weight allocations across NIFTY equities using NumPy to identify the Maximum Sharpe Ratio optimal portfolio.
+- **Interactive Frontend Quant Sandbox Console Modal**:
+  - Dedicated **⚡ Quant Sandbox** launch button in the top navigation bar.
+  - Real-time status telemetry badge (`🟢 ISOLATED (512MB limit, 1.0 CPU)`).
+  - One-click Quick Simulators for Monte Carlo and Markowitz Portfolio Optimization.
+  - Custom Python code editor with syntax-highlighted dark terminal output console.
+  - Chat stream stock cards with violet **`⚡ DeepAgent Quant Sandbox`** metric badges.
+
 ---
 
 ## 📁 Project Directory Structure
@@ -807,24 +1167,33 @@ langgraph-project/
 │   │           ├── chat.py     # /generic_chat, /delete_session (PostgresChatMessageHistory)
 │   │           ├── sql.py      # /get_sql_query (SQL Agent)
 │   │           ├── interact.py # /interact (SSE streaming), /delete_thread, /thread state
-│   │           └── websocket.py# /ws/interact (Bidirectional streaming WebSocket)
+│   │           ├── websocket.py# /ws/interact (Bidirectional streaming WebSocket)
+│   │           └── stock_analysis.py # /stock/analyze, /stock/report/{run_id}, /stock/health, /stock/mermaid
 │   ├── core/
 │   │   ├── __init__.py
 │   │   ├── config.py           # Pydantic BaseSettings (DB, LLM, Token Budgets, Auth, Langfuse)
 │   │   ├── database.py         # AsyncConnectionPool & Postgres checkpointing manager (agent_db)
 │   │   ├── auth_database.py    # Auth DB connection pool, table DDL, and token blacklist (auth_db)
+│   │   ├── blackboard.py       # SQLite Blackboard Run Memory (data/blackboard_{run_id}.db)
 │   │   ├── security.py         # Argon2id password hashing & PyJWT token utilities
 │   │   ├── llm.py              # ChatGroq LLM factory with per-node token limit support
 │   │   ├── exceptions.py       # Custom application exceptions and error handlers
 │   │   ├── observability.py    # Langfuse callback handlers and RunnableConfig builder
-│   │   └── streaming.py        # Centralized async SSE & token streaming event generator
+│   │   ├── streaming.py        # Centralized async SSE & token streaming event generator
+│   │   └── sandbox/            # LangChain Deep Agents Sandboxes Architecture
+│   │       ├── __init__.py
+│   │       ├── base.py         # BaseSandbox dual-plane file & inner tool implementation
+│   │       ├── factory.py      # Pluggable backend auto-detection factory
+│   │       ├── subprocess_sandbox.py # Sanitized, resource-capped subprocess sandbox
+│   │       └── docker_sandbox.py     # Containerized Docker sandbox (--memory=512m, 1.0 CPU)
 │   ├── middleware/
 │   │   ├── __init__.py         # Default global middleware pipeline exports
 │   │   ├── base.py             # AgentMiddleware abstract base class & pipeline executor
 │   │   ├── pii.py              # PIIMiddleware (mask, redact, hash sensitive data)
 │   │   ├── rate_limit.py       # RateLimitMiddleware (sliding window & error budget circuit breaker)
 │   │   ├── hitl.py             # HumanInTheLoopMiddleware (sensitive tool interceptor)
-│   │   └── summarizer.py       # SummarizationMiddleware (token/message trigger history compressor)
+│   │   ├── summarizer.py       # SummarizationMiddleware (token/message trigger history compressor)
+│   │   └── stock_middleware.py # StockThrottle, Telemetry, SelfCritique, ContextEditing
 │   ├── schemas/
 │   │   ├── __init__.py
 │   │   ├── auth.py             # UserSignupRequest, UserLoginRequest, UserResponse, TokenResponse
@@ -832,7 +1201,8 @@ langgraph-project/
 │   │   ├── research.py         # ResearchRequest, ResearchReport, ResearchStreamEvent
 │   │   ├── chat.py             # ChatRequest, ChatResponse, DeleteSession
 │   │   ├── sql.py              # SQLQueryRequest, SQLQueryResponse
-│   │   └── interact.py         # InteractionRequest, DeleteThreadRequest, GraphStateResponse
+│   │   ├── interact.py         # InteractionRequest, DeleteThreadRequest, GraphStateResponse
+│   │   └── stock_analysis.py   # StockAnalysisRequest, StockAnalysisResponse, Finding, ChartSpec
 │   ├── agents/
 │   │   ├── __init__.py
 │   │   ├── react_agent.py      # ReAct agent with tools (DuckDuckGo/Tavily) & middleware
@@ -840,7 +1210,13 @@ langgraph-project/
 │   │   └── classifier_agent.py # Structured JSON classifier with self-correcting retry loop
 │   ├── tools/
 │   │   ├── __init__.py
-│   │   └── weather.py          # Weather forecast tool (WeatherAPI with Open-Meteo fallback)
+│   │   ├── weather.py          # Weather forecast tool (WeatherAPI with Open-Meteo fallback)
+│   │   ├── nifty_data.py       # Official NIFTY 500 CSV downloader & metric enricher
+│   │   ├── stock_fact_store.py # In-memory DuckDB analytical fact store & SQL query tool
+│   │   ├── gnews_tools.py      # GNews Indian stock market news & sentiment tool
+│   │   ├── stock_pinecone_tools.py # Pinecone MCP vector search & narrative RAG
+│   │   ├── quant_models.py     # 5,000-Path Monte Carlo GBM, VaR/CVaR & Markowitz Optimization
+│   │   └── yahoo_finance_tools.py  # 7 yfinance tools (quotes, history, targets, peer comparison)
 │   ├── graphs/
 │   │   ├── __init__.py
 │   │   ├── routing.py          # Conditional edge routing functions (decide_start_node)
@@ -859,34 +1235,44 @@ langgraph-project/
 │   │   │   ├── __init__.py
 │   │   │   ├── builder.py      # ResearchGraphBuilder with parallel branches & defer=True
 │   │   │   └── nodes.py        # Planner, Approver, Dispatcher, Researcher, Synthesizer, Critics, Publisher
-│   │   └── mcp/
+│   │   ├── mcp/
+│   │   │   ├── __init__.py
+│   │   │   ├── builder.py      # MCPTravelGraphBuilder with concurrent Airbnb/Weather fan-out
+│   │   │   └── nodes.py        # Airbnb Agent (MCP tools), Weather Agent, and Tour Guide nodes
+│   │   └── stock_analysis/     # Institutional NSE Stock Analysis Swarm (15 nodes)
 │   │       ├── __init__.py
-│   │       ├── builder.py      # MCPTravelGraphBuilder with concurrent Airbnb/Weather fan-out
-│   │       └── nodes.py        # Airbnb Agent (MCP tools), Weather Agent, and Tour Guide nodes
+│   │       ├── builder.py      # StockAnalysisGraphBuilder with 15 nodes & parallel join
+│   │       ├── nodes.py        # 15 Graph nodes with deepagents, reflection, judge, writers
+│   │       ├── verify.py       # 4-Tier Verification Suite (Numeric, Quote, Digit, Skeptic)
+│   │       └── charts.py       # Deterministic Matplotlib Chart Agent, Critic & Curator
 │   └── retrievers/
 │       ├── __init__.py
 │       ├── hybrid_reranker.py  # Lightweight filtering & BM25 retrieval
 │       └── ensemble.py         # Dynamic EnsembleRetriever builder
 ├── frontend/                   # Decoupled Standalone ChatGPT-Style SPA (Vanilla JS + ES Modules)
-│   ├── index.html              # Modern multi-agent interface with custom MCP dropdown
+│   ├── index.html              # Cockpit with Quant Sandbox Console modal & Quick Simulators
 │   ├── css/
 │   │   ├── theme.css           # Design tokens, typography & dark/light palette
 │   │   ├── components.css      # Custom buttons, modals, cards, tags & switch toggles
-│   │   └── chat.css            # Chat layouts, thinking accordions & custom dropdowns
+│   │   └── chat.css            # Monospace terminal console, stock report cards & grids
 │   └── js/
 │       ├── config.js           # API route mappings & localStorage persistence keys
 │       ├── api.js              # Fetch wrapper, SSE reader & authenticated WebSocket client
 │       ├── auth.js             # Argon2id signup, login, profile & JWT token management
 │       ├── agents.js           # Agent metadata, capability flags (hasParams) & mode presets
-│       ├── chat.js             # Dynamic agent switcher, param visibility & streaming loop
+│       ├── chat.js             # Stream renderer with violet DeepAgent Quant Sandbox badges
 │       ├── decisionTree.js     # Policy navigator, state inspector & thread eviction
 │       ├── research.js         # Parallel multi-critic runner & dynamic critic hints
 │       ├── mcp.js              # Stdio MCP tool inspector & dual-mode travel/lore runner
 │       ├── sqlAgent.js         # Natural language to SQL runner & interactive data table
 │       ├── topology.js         # Mermaid flowchart drawer & node inspection
-│       └── app.js              # Application bootstrapper, modal management & toast alerts
+│       └── app.js              # Modal handlers, quick simulation runners & terminal formatter
 ├── scripts/
 │   ├── init_postgres.sql       # Automatic auth_db and agent_db Docker bootstrap script
+│   ├── run_stock_analysis.py   # Standalone CLI runner for institutional stock analysis swarm
+│   ├── test_fe_stock_sandbox.py# Frontend-to-Backend Quant Sandbox E2E Suite (12/12 pass)
+│   ├── test_sandbox_live.py    # Live Deep Agents Sandbox API integration suite (7/7 pass)
+│   ├── test_stock_live.py      # Live Stock Swarm 12-test comprehensive suite (12/12 pass)
 │   ├── test_all_endpoints.py   # Comprehensive live endpoint & edge-case test suite (45/45 pass)
 │   ├── test_fe_live.py         # Live frontend simulation, CORS & asset test suite (11/11 pass)
 │   ├── init_db.py              # CLI database table verification script
@@ -901,7 +1287,9 @@ langgraph-project/
     ├── test_graph_builder.py   # StateGraph builder and routing unit tests
     ├── test_hybrid_retriever.py# BM25 + filtering unit tests
     ├── test_research_graph.py  # Parallel research graph & defer=True join tests
-    └── test_mcp.py             # Model Context Protocol (MCP) and multi-agent travel tests
+    ├── test_mcp.py             # Model Context Protocol (MCP) and multi-agent travel tests
+    ├── test_stock_analysis.py  # 10 unit & integration tests for stock analysis swarm (10/10 pass)
+    └── test_sandbox.py         # 7 unit tests for Deep Agents Sandboxes & Quant Models (7/7 pass)
 ```
 
 ---
@@ -945,6 +1333,17 @@ langgraph-project/
 | `GET` | `/thread/{thread_id}/state` | Live checkpoint inspection for active thread | `thread_id` (path param), `Bearer <token>` |
 | `DELETE` | `/delete_thread` | Delete graph checkpoint from `AsyncPostgresSaver` | `{"thread_id": "..."}`, `Bearer <token>` |
 | `WS` | `/ws/interact` | **WebSocket** bidirectional streaming & interrupts | JSON message payloads |
+
+### 5. Institutional NSE Stock Analysis Swarm & Deep Agents Quant Sandbox
+| Method | Path | Description | Key Request Params / Auth |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/stock/analyze` | Execute institutional NSE stock analysis agentic swarm with embedded sandbox modeling | `{"query": "...", "sector_filter": "...", "max_lenses": 6}`, `Bearer <token>` (Required) |
+| `GET` | `/stock/report/{run_id}` | View or download full publication-grade HTML research dossier with quant exhibits | `run_id` (path param), `Bearer <token>` or `?token=<jwt>` (Required) |
+| `GET` | `/stock/health` | Embedded DuckDB Fact Store status & NIFTY 500 constituents count | None (Public Diagnostic) |
+| `GET` | `/stock/mermaid` | Live Mermaid diagram of the 15-node compiled stock graph | None (Public Diagnostic) |
+| `GET` | `/stock/sandbox/status` | Telemetry endpoint inspecting active sandbox provider, memory limit (`512m`), and status | `Bearer <token>` (Required) |
+| `POST` | `/stock/quant/simulate` | On-demand 5,000-path Monte Carlo (GBM, VaR 95/99, CVaR) or Markowitz Portfolio Optimization | `{"symbol": "RELIANCE.NS", "simulation_type": "monte_carlo"}`, `Bearer <token>` (Required) |
+| `POST` | `/stock/sandbox/execute` | Execute custom Python code inside isolated sandbox with resource ceilings and timeout guards | `{"code": "import numpy as np...", "timeout": 30}`, `Bearer <token>` (Required) |
 
 ---
 
@@ -1009,19 +1408,45 @@ uv pip install -r requirements.txt
 
 ### 2. Run Comprehensive Test Suites
 
-#### A. Live Backend Endpoint & Critical Edge-Case Suite (45 / 45 Passed &mdash; 100%)
+#### A. Frontend-to-Backend Quant Sandbox E2E Suite (12 / 12 Passed &mdash; 100%)
+Simulates browser user interactions against the live backend (`http://localhost:8000`), testing DOM elements, status telemetry, Quick Monte Carlo, Quick Markowitz Optimization, isolated custom scripting, zero-leak security audit, timeout enforcement, exception handling, and full swarm analysis:
+```bash
+# Run on host or inside running Docker container
+docker exec -i langgraph_api python < scripts/test_fe_stock_sandbox.py
+```
+
+#### B. Dedicated Sandbox Unit & Integration Suite (7 / 7 Passed &mdash; 100%)
+Validates `SandboxBackendProtocol` compliance, environment sanitization (zero API key leaks), POSIX timeout guards, dual-plane file operations, Monte Carlo VaR/CVaR calculations, Markowitz Sharpe optimization, and LangChain `create_deep_agent(backend=sandbox)` compilation:
+```bash
+docker exec langgraph_api pytest tests/test_sandbox.py -v
+# or locally: uv run pytest tests/test_sandbox.py -v
+```
+
+#### C. Live Deep Agents Sandbox API Integration Suite (7 / 7 Passed &mdash; 100%)
+Validates all sandbox REST endpoints (`/stock/sandbox/status`, `/stock/quant/simulate`, `/stock/sandbox/execute`), resource limits, timeout guards, and HTML publication exhibits:
+```bash
+docker exec -i langgraph_api python < scripts/test_sandbox_live.py
+```
+
+#### D. Live Stock Swarm Comprehensive Suite (12 / 12 Passed &mdash; 100%)
+Validates DuckDB fact store, NIFTY 500 constituents, Mermaid DSL rendering, multi-lens swarm analysis, HTML report generation, and security edge cases:
+```bash
+docker exec -i langgraph_api python < scripts/test_stock_live.py
+```
+
+#### E. Live Backend Endpoint & Critical Edge-Case Suite (45 / 45 Passed &mdash; 100%)
 Tests all 7 endpoint categories against the live backend (Public Health, Auth/Security, MCP Travel & Lore, Parallel Research, Stateful Policy Graph with PostgreSQL checkpointing, Text-to-SQL Agent with caching, and WebSocket security):
 ```bash
 python scripts/test_all_endpoints.py
 ```
 
-#### B. Frontend Simulation, CORS & Browser Integration Suite (11 / 11 Passed &mdash; 100%)
+#### F. Frontend Simulation, CORS & Browser Integration Suite (11 / 11 Passed &mdash; 100%)
 Validates HTML delivery, 14 CSS/ES modules, CORS preflight requests, live signup/login/profile flow, SSE streaming, and WebSocket connectivity from `http://localhost:3000`:
 ```bash
 python scripts/test_fe_live.py
 ```
 
-#### C. Unit & Middleware Tests (Pytest)
+#### G. Full Pytest Unit & Middleware Suite
 ```bash
 uv run pytest
 ```
@@ -1043,6 +1468,49 @@ python3 -m http.server 3000
 # or: npx serve -l 3000 .
 ```
 - ChatGPT-Style Web UI (AgentSphere Theme): [http://localhost:3000/](http://localhost:3000/)
+- *(Alternatively, the FastAPI backend also serves the frontend directly at [http://localhost:8000/](http://localhost:8000/))*
+
+### 5. Run Institutional NSE Stock Analysis Swarm (CLI & Web UI)
+
+#### A. Standalone Quantitative CLI Runner:
+```bash
+# 1. Plain-English Targeted Head-to-Head Stock Comparison (Master Deep Agent Planner):
+uv run python scripts/run_stock_analysis.py \
+  --query "compare HDFC Bank and Reliance performance for next 6 months"
+
+# 2. Plain-English Single Stock Institutional Deep Dive:
+uv run python scripts/run_stock_analysis.py \
+  --query "research on HDFC Bank in depth"
+
+# 3. Macro / Sector-Filtered Cohort Screen:
+uv run python scripts/run_stock_analysis.py \
+  --query "Analyze Automobile sector valuation multiples, operating efficiency, and return on equity" \
+  --sector "Automobile and Auto Components" \
+  --max-lenses 6
+```
+- Real-time terminal telemetry displays target entity resolution, horizon days, lens progress, verification votes, and section compilation.
+- Compiles publication-grade HTML research report with Head-to-Head scorecard and figures to `report.html` and `app/static/top_charts/`.
+
+#### B. AgentSphere Web UI:
+- Open [http://localhost:8000/](http://localhost:8000/) or [http://localhost:3000/](http://localhost:3000/).
+- Switch to the **NSE Stock Swarm** agent from the left sidebar or top dropdown.
+- Type any plain-English query, for example:
+  - `"compare HDFC Bank and Reliance performance for next 6 months"`
+  - `"research on HDFC Bank in depth"`
+  - `"compare Tata Motors and Mahindra & Mahindra performance for next 1 year"`
+- The Master Deep Agent Planner resolves target companies and horizons, searches CSV constituents, DuckDB fact store, GNews, and Yahoo Finance, runs isolated Quant Sandbox simulations, passes 4-tier verification, and renders:
+  - Target stock badges (`🏦 HDFCBANK`, `⚡ RELIANCE`), analysis mode, and time horizon.
+  - Interactive **Head-to-Head Fundamental & Valuation Scorecard** (Price, MCap, P/E, P/B, ROE, 6M Returns).
+  - Quantitative Sandbox metrics and Chart Critic-approved exhibits.
+- Click **Open Publication Report** to inspect or export the full research dossier.
+
+### 6. Interactive Quant Sandbox Console (Web UI)
+- Open [http://localhost:8000/](http://localhost:8000/) or [http://localhost:3000/](http://localhost:3000/).
+- Click the **`⚡ Quant Sandbox`** button in the top navigation bar to open the console modal.
+- Check the real-time telemetry badge: `🟢 ISOLATED (512MB limit, 1.0 CPU)`.
+- **Quick Monte Carlo Simulator**: Enter ticker (e.g. `RELIANCE.NS`), adjust volatility slider, and click **Run 5k Paths** to view mean terminal prices, 95% Value at Risk (VaR), and Conditional VaR (CVaR).
+- **Quick Markowitz Optimizer**: Select or enter a basket of equities (`RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ITC.NS`) and click **Optimize Portfolio** to compute optimal Sharpe ratio weights.
+- **Custom Python Console**: Write or select math presets in the code editor, click **Run in Sandbox**, and observe real-time execution duration, exit code, and terminal stdout/stderr.
 
 ---
 

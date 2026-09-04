@@ -79,6 +79,11 @@
           <svg class="agent-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span>General Assistant</span>
         </button>
+
+        <button type="button" class="agent-nav-item" data-agent-id="stock">
+          <svg class="agent-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          <span>NSE Stock Swarm</span>
+        </button>
       </nav>
 
       <!-- Chat History List -->
@@ -169,6 +174,14 @@
                 </div>
                 <div class="agent-option-desc">Stateful chat with Postgres conversation memory.</div>
               </div>
+
+              <div class="agent-option" data-agent-option="stock">
+                <div class="agent-option-head">
+                  <span>NSE Stock Swarm</span>
+                  <span class="tag" style="background: rgba(37,99,235,0.15); color: #3b82f6;">NIFTY 500</span>
+                </div>
+                <div class="agent-option-desc">DuckDB fact store, Pinecone MCP, Yahoo Finance &amp; 13 deep agent lenses.</div>
+              </div>
             </div>
           </div>
 
@@ -224,6 +237,12 @@
           <button type="button" class="btn btn-secondary btn-sm" id="btn-agent-config" title="Configure Agent Parameters">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
             Parameters
+          </button>
+
+          <!-- Quant Sandbox Console Trigger -->
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-open-sandbox" title="Open Deep Agents Quant Sandbox Console" style="background: rgba(124, 58, 237, 0.08); color: #7c3aed; border-color: rgba(124, 58, 237, 0.25);">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Quant Sandbox
           </button>
 
           <!-- Status Indicator Pill -->
@@ -312,7 +331,8 @@
         <span class="tag brand">State Config</span>
       </div>
 
-      <div class="demo-form">
+      <!-- Policy Parameters Form -->
+      <div class="demo-form" id="policy-config-form">
         <div class="field">
           <label class="field-label" for="cfg-device-class">System &amp; Compliance Tier</label>
           <div class="field-select-wrap">
@@ -346,6 +366,77 @@
 
         <div style="display: flex; gap: 10px; margin-top: 12px;">
           <button type="button" class="btn btn-primary" id="config-save-btn">Apply Parameters</button>
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+        </div>
+      </div>
+
+      <!-- Stock Swarm Parameters Form -->
+      <div class="demo-form" id="stock-config-form" style="display: none;">
+        <div class="field">
+          <label class="field-label" for="cfg-stock-sector">Target NSE Sector Filter</label>
+          <div class="field-select-wrap">
+            <select class="field-select" id="cfg-stock-sector">
+              <option value="">All NIFTY 500 Sectors (Broad Swarm)</option>
+              <option value="Automobile and Auto Components">Automobile and Auto Components</option>
+              <option value="Financial Services">Financial Services</option>
+              <option value="Information Technology">Information Technology</option>
+              <option value="Fast Moving Consumer Goods">Fast Moving Consumer Goods (FMCG)</option>
+              <option value="Healthcare">Healthcare &amp; Pharmaceuticals</option>
+              <option value="Oil Gas &amp; Consumable Fuels">Oil Gas &amp; Consumable Fuels</option>
+              <option value="Capital Goods">Capital Goods</option>
+              <option value="Metals &amp; Mining">Metals &amp; Mining</option>
+              <option value="Chemicals">Chemicals &amp; Fertilizers</option>
+              <option value="Power">Power &amp; Utilities</option>
+              <option value="Telecommunication">Telecommunication</option>
+              <option value="Consumer Services">Consumer Services &amp; Retail</option>
+              <option value="Construction Materials">Construction Materials</option>
+            </select>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="cfg-stock-lenses">Max Analyst Lenses Fan-Out (1 &mdash; 13)</label>
+          <input type="number" class="field-input" id="cfg-stock-lenses" min="1" max="13" value="6" />
+          <span class="mono" style="font-size: 10px; color: var(--slate); margin-top: 4px; display: block;">
+            Lenses: Temporal, Effectiveness, Scale, Capital, Structure, Policy, Behavior, Risk, Momentum, Quality, Valuation, Changepoint, Outlier.
+          </span>
+        </div>
+
+        <div style="padding: 10px 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);">
+          <span class="mono" style="font-size: 11px; color: var(--slate); display: flex; align-items: center; gap: 6px;">
+            <span class="status-dot online"></span>
+            DuckDB Fact Store + Pinecone MCP + Yahoo Finance + DeepAgents Isolated Sandbox
+          </span>
+        </div>
+
+        <!-- Quant Sandbox Console Section -->
+        <div style="margin-top: 14px; padding: 12px; background: var(--bg-alt); border: 1px solid var(--rule); border-radius: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <label class="field-label" style="margin: 0; display: flex; align-items: center; gap: 6px;">
+              <span style="color: #7c3aed; font-weight: 700;">⚡ DeepAgent Quant Sandbox</span>
+            </label>
+            <span id="sandbox-status-badge" class="badge" style="background: #10b981; font-size: 10px; color: white; padding: 2px 8px; border-radius: 9999px;">Isolated (512MB limit)</span>
+          </div>
+
+          <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+            <select class="field-select" id="sandbox-preset-select" style="font-size: 12px; padding: 6px;">
+              <option value="monte_carlo">Preset: Monte Carlo 5,000-Path VaR Simulation</option>
+              <option value="portfolio_opt">Preset: Markowitz Efficient Frontier Optimization</option>
+              <option value="custom_code">Preset: Custom Financial Python Script</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" id="sandbox-run-btn" style="white-space: nowrap; font-size: 12px; padding: 6px 12px; background: #7c3aed; color: white; border: none; cursor: pointer;">
+              Run in Sandbox
+            </button>
+          </div>
+
+          <textarea id="sandbox-code-input" class="field-input" rows="4" style="font-family: monospace; font-size: 11.5px; width: 100%; resize: vertical; margin-bottom: 8px;" placeholder="Python simulation code..."></textarea>
+
+          <div id="sandbox-output-wrap" style="display: none; background: #0f172a; color: #38bdf8; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; max-height: 140px; overflow-y: auto; white-space: pre-wrap;"></div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 12px;">
+          <button type="button" class="btn btn-primary" id="stock-config-save-btn">Apply Stock Parameters</button>
           <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
         </div>
       </div>
@@ -449,6 +540,88 @@
           Confirm Reset &rarr;
         </button>
       </form>
+    </div>
+  </div>
+
+
+  <!-- Dedicated Quant Sandbox Console Modal -->
+  <div class="modal-backdrop" id="sandbox-modal">
+    <div class="modal" style="max-width: 780px;">
+      <button type="button" class="modal-close" data-modal-close>&times;</button>
+      <div class="panel-header" style="border-bottom: 1px solid var(--rule); padding-bottom: 12px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="background: #7c3aed; color: white; width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;">⚡</div>
+            <div>
+              <h3 class="panel-title" style="margin: 0; font-size: 17px;">Deep Agents Isolated Quant Sandbox</h3>
+              <p style="margin: 0; font-size: 11.5px; color: var(--slate);">Hardware-constrained execution plane for Monte Carlo, Markowitz optimization &amp; untrusted Python math.</p>
+            </div>
+          </div>
+          <span id="modal-sandbox-status-badge" class="badge" style="background: #10b981; color: white; font-size: 10.5px; padding: 4px 10px; border-radius: 9999px;">Isolated (512MB limit)</span>
+        </div>
+      </div>
+
+      <!-- Quick Run Simulator Cards -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+        <!-- Monte Carlo Card -->
+        <div style="padding: 14px; background: var(--bg-alt); border: 1px solid var(--rule); border-radius: 8px;">
+          <div style="font-weight: 600; font-size: 13px; color: var(--ink); margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+            <span>🎲 Monte Carlo Simulation</span>
+            <span class="tag brand" style="font-size: 9px;">GBM 252-Day</span>
+          </div>
+          <p style="font-size: 11px; color: var(--slate); margin-bottom: 10px;">Simulate 5,000 price paths &amp; compute 95%/99% Value at Risk (VaR).</p>
+          <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+            <input type="text" id="quick-mc-symbol" class="field-input" value="RELIANCE.NS" style="font-size: 11.5px; padding: 5px 8px;" placeholder="Ticker (e.g. TCS.NS)" />
+            <input type="number" id="quick-mc-vol" class="field-input" value="22" min="5" max="100" style="width: 70px; font-size: 11.5px; padding: 5px 8px;" title="Vol %" />
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-quick-run-mc" style="width: 100%; font-size: 11.5px; padding: 6px;">
+            Run 5,000-Path Monte Carlo
+          </button>
+        </div>
+
+        <!-- Portfolio Optimization Card -->
+        <div style="padding: 14px; background: var(--bg-alt); border: 1px solid var(--rule); border-radius: 8px;">
+          <div style="font-weight: 600; font-size: 13px; color: var(--ink); margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+            <span>📈 Markowitz Efficient Frontier</span>
+            <span class="tag brand" style="font-size: 9px;">Max Sharpe</span>
+          </div>
+          <p style="font-size: 11px; color: var(--slate); margin-bottom: 10px;">Solve optimal asset weights &amp; risk-return trade-offs.</p>
+          <input type="text" id="quick-opt-symbols" class="field-input" value="RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ITC.NS" style="font-size: 11.5px; padding: 5px 8px; margin-bottom: 8px;" placeholder="Comma-separated tickers" />
+          <button type="button" class="btn btn-primary btn-sm" id="btn-quick-run-opt" style="width: 100%; font-size: 11.5px; padding: 6px; background: #0284c7; border-color: #0284c7;">
+            Optimize Portfolio Allocation
+          </button>
+        </div>
+      </div>
+
+      <!-- Custom Python Scripting Section -->
+      <div style="margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-size: 12px; font-weight: 600;">Custom Python Code Execution in Sandbox</span>
+          <div style="display: flex; gap: 6px;">
+            <select class="field-select" id="modal-sandbox-preset-select" style="font-size: 11px; padding: 4px 8px;">
+              <option value="monte_carlo">Preset: Monte Carlo Simulation</option>
+              <option value="portfolio_opt">Preset: Portfolio Optimization</option>
+              <option value="custom_code">Preset: Sandbox Environment Audit</option>
+            </select>
+            <button type="button" class="btn btn-secondary btn-sm" id="modal-sandbox-run-btn" style="background: #7c3aed; color: white; border: none; font-size: 11.5px; padding: 4px 12px; cursor: pointer;">
+              Execute Script
+            </button>
+          </div>
+        </div>
+        <textarea id="modal-sandbox-code-input" class="field-input" rows="5" style="font-family: monospace; font-size: 11.5px; width: 100%; resize: vertical;" placeholder="Enter Python script..."></textarea>
+      </div>
+
+      <!-- Live Terminal Output Console -->
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <span class="mono" style="font-size: 11px; color: var(--slate); display: flex; align-items: center; gap: 6px;">
+            <span class="status-dot online"></span>
+            Sandbox Terminal Output
+          </span>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-sandbox-output" style="font-size: 10px; padding: 2px 6px;">Clear Console</button>
+        </div>
+        <pre id="modal-sandbox-output-wrap" style="background: #0b0f19; color: #38bdf8; border: 1px solid #1e293b; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 11px; max-height: 180px; overflow-y: auto; white-space: pre-wrap; margin: 0;">Ready. Select a preset or simulation above to execute in isolated sandbox.</pre>
+      </div>
     </div>
   </div>
 

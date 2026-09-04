@@ -31,7 +31,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH" \
     PYTHONPATH=/app \
-    PORT=8000
+    PORT=8000 \
+    MPLCONFIGDIR=/tmp/matplotlib
 
 WORKDIR /app
 
@@ -53,13 +54,16 @@ COPY --from=builder /opt/venv /opt/venv
 # Pre-download NLTK tokenizers
 RUN python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
 
-# Copy application source code
+# Copy application source code and data assets
 COPY --chown=appuser:appgroup app/ /app/app/
+COPY --chown=appuser:appgroup data/ /app/data/
+COPY --chown=appuser:appgroup frontend/ /app/frontend/
 COPY --chown=appuser:appgroup scripts/ /app/scripts/
 COPY --chown=appuser:appgroup pyproject.toml /app/
 
-# Create directory for static assets
-RUN mkdir -p /app/app/static && chown -R appuser:appgroup /app/app/static
+# Create directory for data, static assets, and matplotlib cache
+RUN mkdir -p /app/data /app/app/static /tmp/matplotlib && \
+    chown -R appuser:appgroup /app/data /app/app/static /tmp/matplotlib
 
 # Switch to non-root user
 USER appuser

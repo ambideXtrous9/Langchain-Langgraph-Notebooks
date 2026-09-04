@@ -117,6 +117,16 @@ class Settings(BaseSettings):
     RERANKER_MIN_SCORE: float = 0.1
     DEFAULT_TOP_K: int = 5
 
+    # --- Deep Agents Sandbox Configuration ---
+    SANDBOX_PROVIDER: str = Field(
+        default="auto",
+        description="Sandbox provider: 'auto', 'docker', 'local', or 'langsmith'",
+    )
+    SANDBOX_DEFAULT_TIMEOUT: int = 30
+    SANDBOX_MEMORY_LIMIT: str = "512m"
+    SANDBOX_CPU_LIMIT: float = 1.0
+    SANDBOX_DOCKER_IMAGE: str = "python:3.12-slim"
+
     @property
     def effective_db_uri(self) -> str:
         """Returns the active DB URI, falling back to DATABASE_URL if DB_URI is empty."""
