@@ -559,28 +559,23 @@ flowchart TD
 </p>
 
 ```mermaid
----
-config:
-  flowchart:
-    curve: linear
----
 graph TD;
-	__start__([<p>__start__</p>]):::first
-	planner(planner)
-	approver(approver<br/><small><em>autonomous review</em></small>)
-	researcher_dispatcher(researcher_dispatcher)
-	researcher(researcher<br/><small><em>DuckDuckGo live search</em></small>)
-	synthesizer(synthesizer)
-	fact_critic(fact_critic<br/><small><em>Branch A: Fact Audit</em></small>)
-	style_critic_1(style_critic_1<br/><small><em>Branch B1: Tone & Clarity</em></small>)
-	style_critic_2(style_critic_2<br/><small><em>Branch B2: Executive Polish</em></small>)
-	publisher(publisher<hr/><small><em>defer = True</em></small>)
-	__end__([<p>__end__</p>]):::last
+	__start__(["__start__"]):::first
+	planner["planner"]
+	approver["approver<br/><small><em>autonomous review</em></small>"]
+	researcher_dispatcher["researcher_dispatcher"]
+	researcher["researcher<br/><small><em>DuckDuckGo live search</em></small>"]
+	synthesizer["synthesizer"]
+	fact_critic["fact_critic<br/><small><em>Branch A: Fact Audit</em></small>"]
+	style_critic_1["style_critic_1<br/><small><em>Branch B1: Tone & Clarity</em></small>"]
+	style_critic_2["style_critic_2<br/><small><em>Branch B2: Executive Polish</em></small>"]
+	publisher["publisher<hr/><small><em>defer = True</em></small>"]
+	__end__(["__end__"]):::last
 	
 	__start__ --> planner;
 	planner --> approver;
-	approver -. &nbsp;revise&nbsp; .-> planner;
-	approver -. &nbsp;dispatch&nbsp; .-> researcher_dispatcher;
+	approver -. "revise" .-> planner;
+	approver -. "dispatch" .-> researcher_dispatcher;
 	researcher_dispatcher --> researcher;
 	researcher --> synthesizer;
 	
@@ -666,36 +661,31 @@ flowchart TD
 </p>
 
 ```mermaid
----
-config:
-  flowchart:
-    curve: linear
----
 graph TD;
-	__start__([<p>__start__</p>]):::first
-	deterministic_ingest(1. deterministic_ingest<br/><small><em>NIFTY 500 CSV -> DuckDB & Pinecone MCP</em></small>)
-	richness_assessor(2. richness_assessor<br/><small><em>Data Completeness & Lens Gating</em></small>)
-	planner(3. planner<br/><small><em>Master Deep Agent Strategy & Subgoals</em></small>)
-	analyst_fanout(4. analyst_fanout<br/><small><em>13 Deep Agent Lenses + Middlewares</em></small>)
-	reflection(5. reflection<br/><small><em>Coverage & Gap Evaluation</em></small>)
-	followup_analysis(6. followup_analysis<br/><small><em>Targeted Gap Funding</em></small>)
-	gather(7. gather<br/><small><em>SQLite Blackboard Synchronization</em></small>)
-	verify(8. verify<br/><small><em>4-Tier Numeric, Quote, Digit & Skeptic Audit</em></small>)
-	judge(9. judge<br/><small><em>Deduplication, Ranking & Headlines</em></small>)
-	narrative_enrich(10. narrative_enrich<br/><small><em>Pinecone MCP Vector Context (No LLM)</em></small>)
-	chart_agent(11a. chart_agent<br/><small><em>Matplotlib Realized Plots + Chart Critic</em></small>)
-	section_writers(11b. section_writers<br/><small><em>7 Spine Section Writers</em></small>)
-	exec_summary(11c. exec_summary<br/><small><em>CIO Actionable Briefing</em></small>)
-	assembler(12. assembler<hr/><small><em>defer = True</em></small>)
-	chart_curator(13. chart_curator<br/><small><em>Top Exhibits & figures.json</em></small>)
-	__end__([<p>__end__</p>]):::last
+	__start__(["__start__"]):::first
+	deterministic_ingest["1. deterministic_ingest<br/><small><em>NIFTY 500 CSV -> DuckDB & Pinecone MCP</em></small>"]
+	richness_assessor["2. richness_assessor<br/><small><em>Data Completeness & Lens Gating</em></small>"]
+	planner["3. planner<br/><small><em>Master Deep Agent Strategy & Subgoals</em></small>"]
+	analyst_fanout["4. analyst_fanout<br/><small><em>13 Deep Agent Lenses + Middlewares</em></small>"]
+	reflection["5. reflection<br/><small><em>Coverage & Gap Evaluation</em></small>"]
+	followup_analysis["6. followup_analysis<br/><small><em>Targeted Gap Funding</em></small>"]
+	gather["7. gather<br/><small><em>SQLite Blackboard Synchronization</em></small>"]
+	verify["8. verify<br/><small><em>4-Tier Numeric, Quote, Digit & Skeptic Audit</em></small>"]
+	judge["9. judge<br/><small><em>Deduplication, Ranking & Headlines</em></small>"]
+	narrative_enrich["10. narrative_enrich<br/><small><em>Pinecone MCP Vector Context - No LLM</em></small>"]
+	chart_agent["11a. chart_agent<br/><small><em>Matplotlib Realized Plots + Chart Critic</em></small>"]
+	section_writers["11b. section_writers<br/><small><em>7 Spine Section Writers</em></small>"]
+	exec_summary["11c. exec_summary<br/><small><em>CIO Actionable Briefing</em></small>"]
+	assembler["12. assembler<hr/><small><em>defer = True</em></small>"]
+	chart_curator["13. chart_curator<br/><small><em>Top Exhibits & figures.json</em></small>"]
+	__end__(["__end__"]):::last
 
 	__start__ --> deterministic_ingest;
 	deterministic_ingest --> richness_assessor;
 	richness_assessor --> planner;
 	planner --> analyst_fanout;
 	analyst_fanout --> reflection;
-	reflection -. &nbsp;followup&nbsp; .-> followup_analysis;
+	reflection -. "followup" .-> followup_analysis;
 	reflection -.-> gather;
 	followup_analysis --> gather;
 	gather -.-> verify;
