@@ -75,3 +75,4 @@ Thumbs.db
 static/graph.png
 static/*.png
 static/*.svg
+app/static/report_*.html

@@ -198,6 +198,10 @@ class AuthManager {
       if (sidebarRole) sidebarRole.textContent = "Click to Sign In";
       if (logoutBtn) logoutBtn.style.display = "none";
     }
+
+    window.dispatchEvent(new CustomEvent("agentsphere:auth_changed", {
+      detail: { user: this.currentUser, token: api.getToken() }
+    }));
   }
 }
 

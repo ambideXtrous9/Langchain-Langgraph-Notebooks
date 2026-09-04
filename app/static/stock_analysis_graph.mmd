@@ -1,0 +1,46 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	deterministic_ingest(deterministic_ingest)
+	richness_assessor(richness_assessor)
+	planner(planner)
+	analyst_fanout(analyst_fanout)
+	reflection(reflection)
+	followup_analysis(followup_analysis)
+	gather(gather)
+	verify(verify)
+	judge(judge)
+	narrative_enrich(narrative_enrich)
+	chart_agent(chart_agent)
+	section_writers(section_writers)
+	exec_summary(exec_summary)
+	assembler(assembler<hr/><small><em>defer = True</em></small>)
+	chart_curator(chart_curator)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> deterministic_ingest;
+	analyst_fanout --> reflection;
+	assembler --> chart_curator;
+	chart_agent --> assembler;
+	deterministic_ingest --> richness_assessor;
+	exec_summary --> assembler;
+	followup_analysis --> gather;
+	gather -.-> judge;
+	gather -.-> verify;
+	judge --> narrative_enrich;
+	narrative_enrich --> chart_agent;
+	narrative_enrich --> exec_summary;
+	narrative_enrich --> section_writers;
+	planner --> analyst_fanout;
+	reflection -. &nbsp;followup&nbsp; .-> followup_analysis;
+	reflection -.-> gather;
+	richness_assessor --> planner;
+	section_writers --> assembler;
+	verify --> judge;
+	chart_curator --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

@@ -55,8 +55,15 @@ export const CONFIG = {
     // Chat Memory
     GENERIC_CHAT: "/generic_chat",
     DELETE_SESSION: "/delete_session",
+
+    // Institutional NSE Stock Analysis
+    STOCK_ANALYZE: "/stock/analyze",
+    STOCK_HEALTH: "/stock/health",
+    STOCK_REPORT: (runId) => `/stock/report/${runId}`,
+    STOCK_MERMAID: "/stock/mermaid",
   }
 };
+
 
 export function getApiBase() {
   return localStorage.getItem(CONFIG.STORAGE_KEYS.API_BASE) || CONFIG.DEFAULT_API_BASE;

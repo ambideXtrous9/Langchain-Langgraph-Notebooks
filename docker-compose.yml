@@ -59,6 +59,9 @@ services:
     volumes:
       - ./app:/app/app
       - ./app/static:/app/app/static
+      - ./data:/app/data
+      - ./frontend:/app/frontend
+      - ./scripts:/app/scripts
     depends_on:
       postgres:
         condition: service_healthy

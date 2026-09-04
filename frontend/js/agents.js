@@ -255,5 +255,47 @@ export const AGENTS = {
         prompt: "What are the essential requirements of ISO 27001 risk assessment?"
       }
     ]
+  },
+
+  stock: {
+    id: "stock",
+    name: "NSE Stock Analysis (Swarm)",
+    badge: "NIFTY 500 &middot; 13 LENSES &middot; PINECONE MCP",
+    icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>`,
+    description: "Institutional multi-agent stock analysis with embedded DuckDB fact store, Pinecone MCP vector search, Yahoo Finance real-time market data, GNews market sentiment, 13 analyst lenses, 4-tier verification audit, and HTML publication report assembly.",
+    color: "#2563eb",
+    endpoint: "/stock/analyze",
+    reportEndpoint: (runId) => `/stock/report/${runId}`,
+    mermaidEndpoint: "/stock/mermaid",
+    supportsHITL: false,
+    hasParams: true,
+    inputPlaceholder: "Ask in plain English (e.g. 'compare HDFC Bank and Reliance performance for next 6 months' or 'research on HDFC Bank in depth')...",
+    defaultPrompt: "compare HDFC Bank and Reliance performance for next 6 months",
+    params: {
+      sector_filter: "",
+      max_lenses: 6,
+    },
+    suggestions: [
+      {
+        title: "HDFC Bank vs Reliance 6M Comparison",
+        desc: "Master Planner: DuckDB metrics, Yahoo Finance 6M history, GNews, & Monte Carlo simulations.",
+        prompt: "compare HDFC Bank and Reliance performance for next 6 months"
+      },
+      {
+        title: "In-Depth Research on HDFC Bank",
+        desc: "Master Planner: CSV, DuckDB fact store, Yahoo Finance targets, news narratives, and risk audit.",
+        prompt: "research on HDFC Bank in depth"
+      },
+      {
+        title: "Tata Motors vs M&M 1-Year Horizon",
+        desc: "Automotive peer comparison across valuations, ROE, debt, and Markowitz portfolio weights.",
+        prompt: "compare Tata Motors and Mahindra & Mahindra performance for next 1 year"
+      },
+      {
+        title: "Financial Services Sector Screen",
+        desc: "Screen Financial Services for high ROE, healthy P/B, and institutional conviction.",
+        prompt: "Screen Financial Services stocks with ROE > 15%, robust price-to-book, and favorable valuation"
+      }
+    ]
   }
 };
